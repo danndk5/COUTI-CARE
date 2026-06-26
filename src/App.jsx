@@ -12,15 +12,17 @@ import DetailScreen       from "./screens/DetailScreen";
 import TugasDetailScreen  from "./screens/TugasDetailScreen";
 import { supabase } from "./lib/supabase";
 import RiwayatKerusakanScreen from "./screens/RiwayatKerusakanScreen";
+import { useBreakpoint } from "./hooks/useBreakpoint";
+import { MOBILE_MAX_WIDTH, DESKTOP_CONTENT_MAX_WIDTH } from "./styles/layout";
 
 const App = () => {
   const [screen, setScreen] = useState("login");
-  const [role, setRole] = useState(null); // FIX: null bukan "transportir" supaya tidak ada default yang salah
+  const [role, setRole] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selectedInspeksiId, setSelectedInspeksiId] = useState(null);
   const [selectedTugasId, setSelectedTugasId] = useState(null);
+  const isDesktop = useBreakpoint();
 
-  // FIX: pisah fungsi fetchRole supaya bisa dipanggil dari checkSession & onAuthStateChange
   const fetchRoleAndNavigate = async (userId) => {
     const { data: profile, error } = await supabase
       .from("profiles")
@@ -29,14 +31,17 @@ const App = () => {
       .single();
 
     if (error || !profile) {
-      // Gagal ambil profile → logout paksa, jangan biarkan masuk dengan role null
       await supabase.auth.signOut();
+      // FIX BACK BUTTON: replaceState (bukan pushState) untuk screen "anchor"
+      // (login/dashboard) — supaya back button tidak nyangkut di history lama
+      window.history.replaceState({ screen: "login" }, "");
       setScreen("login");
       setRole(null);
       return;
     }
 
     setRole(profile.role);
+    window.history.replaceState({ screen: "dashboard" }, "");
     setScreen("dashboard");
   };
 
@@ -45,6 +50,9 @@ const App = () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
         await fetchRoleAndNavigate(session.user.id);
+      } else {
+        // FIX BACK BUTTON: pastikan ada 1 history entry dasar sejak awal load
+        window.history.replaceState({ screen: "login" }, "");
       }
       setLoading(false);
     };
@@ -53,13 +61,14 @@ const App = () => {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === "SIGNED_OUT") {
-        // FIX: clear semua state saat logout
+        // FIX BACK BUTTON: replaceState supaya back tidak bisa balik ke
+        // screen yang butuh login setelah logout
+        window.history.replaceState({ screen: "login" }, "");
         setScreen("login");
         setRole(null);
         setSelectedInspeksiId(null);
         setSelectedTugasId(null);
       }
-      // FIX: handle SIGNED_IN (misal login di tab lain / session refresh)
       if (event === "SIGNED_IN" && session) {
         await fetchRoleAndNavigate(session.user.id);
       }
@@ -68,25 +77,53 @@ const App = () => {
     return () => subscription?.unsubscribe();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // FIX BACK BUTTON: dengarkan tombol back fisik HP / tombol back browser.
+  // Setiap kali itu ditekan, browser otomatis "pop" 1 entry dari history dan
+  // fire event ini — kita tinggal sinkronkan state screen sesuai isinya.
+  useEffect(() => {
+    const handlePopState = (event) => {
+      const state = event.state;
+      if (state?.screen) {
+        setScreen(state.screen);
+        if ("selectedInspeksiId" in state) setSelectedInspeksiId(state.selectedInspeksiId);
+        if ("selectedTugasId" in state) setSelectedTugasId(state.selectedTugasId);
+      }
+      // kalau state null/kosong, berarti sudah di entry paling awal —
+      // biarkan browser/HP lanjut keluar dari web app, itu memang benar
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
   const handleLogin = (r) => {
     setRole(r);
+    window.history.replaceState({ screen: "dashboard" }, "");
     setScreen("dashboard");
   };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    // onAuthStateChange SIGNED_OUT akan handle reset state
+    // onAuthStateChange SIGNED_OUT akan handle reset state & history
   };
 
-  const nav = (s) => setScreen(s);
+  // FIX BACK BUTTON: nav() sekarang push history entry baru setiap navigasi,
+  // signature TIDAK berubah — semua screen yang sudah pakai onNav={nav}
+  // tidak perlu diubah sama sekali.
+  const nav = (s) => {
+    window.history.pushState({ screen: s }, "");
+    setScreen(s);
+  };
 
   const openDetail = (id) => {
     setSelectedInspeksiId(id);
+    window.history.pushState({ screen: "detail", selectedInspeksiId: id }, "");
     setScreen("detail");
   };
 
   const openTugas = (id) => {
     setSelectedTugasId(id);
+    window.history.pushState({ screen: "tugas-detail", selectedTugasId: id }, "");
     setScreen("tugas-detail");
   };
 
@@ -109,8 +146,6 @@ const App = () => {
         />
       );
     }
-    // FIX: "transportir" dan "driver" keduanya masuk DashboardScreen
-    // Kalau ada role lain yang tidak dikenali, juga masuk sini (aman)
     return (
       <DashboardScreen
         role={role}
@@ -125,14 +160,18 @@ const App = () => {
     fontFamily: "'DM Sans', sans-serif",
     background: "#F8FAFC",
     minHeight: "100vh",
-    maxWidth: 430,
-    margin: "0 auto",
+    width: "100%",
+    maxWidth: isDesktop ? "none" : MOBILE_MAX_WIDTH,
+    margin: isDesktop ? 0 : "0 auto",
   };
+
+  const innerStyle = isDesktop
+    ? { maxWidth: DESKTOP_CONTENT_MAX_WIDTH, margin: "0 auto", width: "100%" }
+    : undefined;
 
   if (loading) {
     return (
       <div style={{ ...containerStyle, display: "flex", justifyContent: "center", alignItems: "center" }}>
-        {/* FIX: loading lebih informatif */}
         <div style={{ textAlign: "center" }}>
           <div style={{ fontSize: 24, marginBottom: 8 }}>⏳</div>
           <div style={{ fontSize: 14, color: "#64748B" }}>Memuat aplikasi...</div>
@@ -141,23 +180,23 @@ const App = () => {
     );
   }
 
-  // FIX: fallback kalau screen tidak match → redirect ke login
   const knownScreens = ["login", "register", "dashboard", "form", "history", "maintenance", "detail", "tugas-detail", "riwayat-kerusakan", "404"];
   const safeScreen = knownScreens.includes(screen) ? screen : "login";
 
   return (
     <div style={containerStyle}>
       <GlobalStyles />
-
-      {safeScreen === "login"        && <LoginScreen    onLogin={handleLogin} onGoRegister={() => setScreen("register")} />}
-      {safeScreen === "register"     && <RegisterScreen onBack={() => setScreen("login")} />}
-      {safeScreen === "dashboard"    && renderDashboard()}
-      {safeScreen === "form"         && <FormScreen onBack={() => setScreen("dashboard")} onNav={nav} />}
-      {safeScreen === "history"      && <RiwayatScreen role={role} onNav={nav} onOpenDetail={openDetail} />}
-      {safeScreen === "maintenance"  && <MaintenanceScreen role={role} onNav={nav} />}
-      {safeScreen === "detail"       && <DetailScreen inspeksiId={selectedInspeksiId} onBack={() => setScreen("dashboard")} />}
-      {safeScreen === "tugas-detail" && <TugasDetailScreen tugasId={selectedTugasId} onBack={() => setScreen("dashboard")} />}
-      {safeScreen === "riwayat-kerusakan" && <RiwayatKerusakanScreen onBack={() => setScreen("dashboard")} />}
+      <div style={innerStyle}>
+        {safeScreen === "login"        && <LoginScreen    onLogin={handleLogin} onGoRegister={() => nav("register")} />}
+        {safeScreen === "register"     && <RegisterScreen onBack={() => window.history.back()} />}
+        {safeScreen === "dashboard"    && renderDashboard()}
+        {safeScreen === "form"         && <FormScreen onBack={() => window.history.back()} onNav={nav} />}
+        {safeScreen === "history"      && <RiwayatScreen role={role} onNav={nav} onOpenDetail={openDetail} />}
+        {safeScreen === "maintenance"  && <MaintenanceScreen role={role} onNav={nav} />}
+        {safeScreen === "detail"       && <DetailScreen inspeksiId={selectedInspeksiId} onBack={() => window.history.back()} />}
+        {safeScreen === "tugas-detail" && <TugasDetailScreen tugasId={selectedTugasId} onBack={() => window.history.back()} />}
+        {safeScreen === "riwayat-kerusakan" && <RiwayatKerusakanScreen onBack={() => window.history.back()} />}
+      </div>
     </div>
   );
 };

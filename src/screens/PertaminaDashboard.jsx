@@ -24,6 +24,8 @@ import { calculateHealthScore, getHealthStatus } from "../lib/healthScore";
 import { formatDate, formatTime } from "../lib/dateHelper";
 import { getArmadaReminderList } from "../lib/reminderHelper";
 import { getGroupedKerusakan } from "../lib/kerusakanHelper";
+import { useBreakpoint } from "../hooks/useBreakpoint";
+import { DESKTOP_GRID_GAP } from "../styles/layout";
 
 const AssignModal = ({ inspeksi, onClose, onAssigned }) => {
   const [mekanikList, setMekanikList] = useState([]);
@@ -167,23 +169,22 @@ const AssignModal = ({ inspeksi, onClose, onAssigned }) => {
   );
 };
 
-const StatCard = ({ value, label, color, bg }) => (
+const StatCard = ({ value, label, color, bg, isDesktop }) => (
   <div
     style={{
       background: bg,
       borderRadius: 16,
-      padding: "16px 12px",
+      padding: isDesktop ? "22px 16px" : "16px 12px",
       textAlign: "center",
     }}
   >
-    <div style={{ fontSize: 22, fontWeight: 800, color }}>{value}</div>
-    <div style={{ fontSize: 10, color, fontWeight: 600, marginTop: 2, opacity: 0.85 }}>
+    <div style={{ fontSize: isDesktop ? 28 : 22, fontWeight: 800, color }}>{value}</div>
+    <div style={{ fontSize: isDesktop ? 12 : 10, color, fontWeight: 600, marginTop: 2, opacity: 0.85 }}>
       {label}
     </div>
   </div>
 );
 
-// 3 kategori health score, sesuai getHealthStatus di lib/healthScore.js
 const HEALTH_CATEGORY_COLORS = {
   Baik: "#10B981",
   "Perlu Perhatian": "#F59E0B",
@@ -191,6 +192,8 @@ const HEALTH_CATEGORY_COLORS = {
 };
 
 const PertaminaDashboard = ({ onNav, onLogout, onOpenDetail }) => {
+  const isDesktop = useBreakpoint();
+
   const [inspeksiList, setInspeksiList] = useState([]);
   const [tugasList, setTugasList] = useState([]);
   const [stats, setStats] = useState({
@@ -202,7 +205,7 @@ const PertaminaDashboard = ({ onNav, onLogout, onOpenDetail }) => {
   });
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("semua");
-  const [healthFilter, setHealthFilter] = useState(null); // null | "Baik" | "Perlu Perhatian" | "Kritis"
+  const [healthFilter, setHealthFilter] = useState(null);
   const [assignTarget, setAssignTarget] = useState(null);
 
   const loadData = async () => {
@@ -234,7 +237,7 @@ const PertaminaDashboard = ({ onNav, onLogout, onOpenDetail }) => {
 
       const withStatus = data.map((item) => {
         const health = calculateHealthScore(item);
-        const healthCategory = getHealthStatus(health.overall).label; // "Baik" | "Perlu Perhatian" | "Kritis"
+        const healthCategory = getHealthStatus(health.overall).label;
         return {
           ...item,
           overallStatus: isNormal(item) ? "Normal" : "Abnormal",
@@ -264,7 +267,6 @@ const PertaminaDashboard = ({ onNav, onLogout, onOpenDetail }) => {
 
   const filteredList = inspeksiList.filter((item) => {
     if (healthFilter && item.healthCategory !== healthFilter) return false;
-
     if (filter === "semua") return true;
     if (filter === "abnormal") return item.overallStatus === "Abnormal";
     if (filter === "ditugaskan") return item.status === "ditugaskan";
@@ -273,7 +275,6 @@ const PertaminaDashboard = ({ onNav, onLogout, onOpenDetail }) => {
     return true;
   });
 
-  // Data untuk Pie Chart — 3 kategori health score (bukan lagi Normal/Abnormal)
   const healthCategoryCounts = {
     Baik: inspeksiList.filter((i) => i.healthCategory === "Baik").length,
     "Perlu Perhatian": inspeksiList.filter((i) => i.healthCategory === "Perlu Perhatian").length,
@@ -283,7 +284,6 @@ const PertaminaDashboard = ({ onNav, onLogout, onOpenDetail }) => {
     .map(([name, value]) => ({ name, value }))
     .filter((d) => d.value > 0);
 
-  // Data untuk Bar Chart — trend 7 hari terakhir
   const last7Days = [...Array(7)]
     .map((_, i) => {
       const d = new Date();
@@ -356,135 +356,152 @@ const PertaminaDashboard = ({ onNav, onLogout, onOpenDetail }) => {
         </div>
       </div>
 
-      <div style={{ padding: "20px 16px" }}>
+      <div style={{ padding: isDesktop ? "24px 32px" : "20px 16px" }}>
         {/* Stats Cards */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8, marginBottom: 20 }}>
-          <StatCard value={stats.total} label="Total" color={theme.primary} bg={theme.primaryLight} />
-          <StatCard value={stats.abnormal} label="Abnormal" color={theme.danger} bg={theme.dangerLight} />
-          <StatCard value={stats.ditugaskan} label="Proses" color="#F59E0B" bg="#FEF3C7" />
-          <StatCard value={stats.selesai} label="Selesai" color={theme.success} bg={theme.successLight} />
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr 1fr 1fr",
+          gap: isDesktop ? DESKTOP_GRID_GAP : 8,
+          marginBottom: 20,
+        }}>
+          <StatCard value={stats.total} label="Total" color={theme.primary} bg={theme.primaryLight} isDesktop={isDesktop} />
+          <StatCard value={stats.abnormal} label="Abnormal" color={theme.danger} bg={theme.dangerLight} isDesktop={isDesktop} />
+          <StatCard value={stats.ditugaskan} label="Proses" color="#F59E0B" bg="#FEF3C7" isDesktop={isDesktop} />
+          <StatCard value={stats.selesai} label="Selesai" color={theme.success} bg={theme.successLight} isDesktop={isDesktop} />
         </div>
 
-        {/* Reminder & Escalation Banner */}
+        {/* Reminder & Top3 — full width di kedua mode */}
         <ReminderBanner armadaList={getArmadaReminderList(inspeksiList)} />
-
-        {/* Top 3 Armada Paling Sering Rusak */}
         <Top3KerusakanCard
           groupedKerusakan={getGroupedKerusakan(inspeksiList)}
           onViewAll={() => onNav("riwayat-kerusakan")}
         />
 
-        {/* Pie Chart - Komposisi Health Score (3 kategori, klik untuk filter) */}
-        {pieData.length > 0 && (
-          <Card style={{ marginBottom: 20, padding: 16 }}>
-            <SectionLabel style={{ marginBottom: 8 }}>
-              Komposisi Status Kesehatan Armada
-            </SectionLabel>
-            <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-              <div style={{ width: 120, height: 120, flexShrink: 0 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={pieData}
-                      dataKey="value"
-                      nameKey="name"
-                      innerRadius={32}
-                      outerRadius={56}
-                      paddingAngle={2}
-                      onClick={(entry) =>
-                        setHealthFilter((prev) =>
-                          prev === entry.name ? null : entry.name
-                        )
-                      }
-                      cursor="pointer"
-                    >
-                      {pieData.map((entry, index) => (
-                        <Cell
-                          key={index}
-                          fill={HEALTH_CATEGORY_COLORS[entry.name]}
-                          opacity={healthFilter && healthFilter !== entry.name ? 0.35 : 1}
-                        />
-                      ))}
-                    </Pie>
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              <div style={{ flex: 1 }}>
-                {pieData.map((d) => (
-                  <div
-                    key={d.name}
-                    onClick={() =>
-                      setHealthFilter((prev) => (prev === d.name ? null : d.name))
-                    }
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      marginBottom: 8,
-                      cursor: "pointer",
-                      opacity: healthFilter && healthFilter !== d.name ? 0.45 : 1,
-                    }}
-                  >
+        {/* Charts — vertikal di mobile, 2 kolom di desktop */}
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: isDesktop ? "1fr 1fr" : "1fr",
+          gap: isDesktop ? DESKTOP_GRID_GAP : 0,
+          marginBottom: isDesktop ? 0 : 0,
+          alignItems: "start",
+        }}>
+          {/* Pie Chart */}
+          {pieData.length > 0 && (
+            <Card style={{ marginBottom: 20, padding: 16 }}>
+              <SectionLabel style={{ marginBottom: 8 }}>
+                Komposisi Status Kesehatan Armada
+              </SectionLabel>
+              <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                <div style={{ width: 120, height: 120, flexShrink: 0 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={pieData}
+                        dataKey="value"
+                        nameKey="name"
+                        innerRadius={32}
+                        outerRadius={56}
+                        paddingAngle={2}
+                        onClick={(entry) =>
+                          setHealthFilter((prev) =>
+                            prev === entry.name ? null : entry.name
+                          )
+                        }
+                        cursor="pointer"
+                      >
+                        {pieData.map((entry, index) => (
+                          <Cell
+                            key={index}
+                            fill={HEALTH_CATEGORY_COLORS[entry.name]}
+                            opacity={healthFilter && healthFilter !== entry.name ? 0.35 : 1}
+                          />
+                        ))}
+                      </Pie>
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div style={{ flex: 1 }}>
+                  {pieData.map((d) => (
                     <div
+                      key={d.name}
+                      onClick={() =>
+                        setHealthFilter((prev) => (prev === d.name ? null : d.name))
+                      }
                       style={{
-                        width: 10,
-                        height: 10,
-                        borderRadius: "50%",
-                        background: HEALTH_CATEGORY_COLORS[d.name],
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        marginBottom: 8,
+                        cursor: "pointer",
+                        opacity: healthFilter && healthFilter !== d.name ? 0.45 : 1,
                       }}
-                    />
-                    <div style={{ fontSize: 12, color: theme.text, fontWeight: 600 }}>
-                      {d.name === "Baik" && "🟢 "}
-                      {d.name === "Perlu Perhatian" && "🟡 "}
-                      {d.name === "Kritis" && "🔴 "}
-                      {d.name}
+                    >
+                      <div
+                        style={{
+                          width: 10,
+                          height: 10,
+                          borderRadius: "50%",
+                          background: HEALTH_CATEGORY_COLORS[d.name],
+                        }}
+                      />
+                      <div style={{ fontSize: 12, color: theme.text, fontWeight: 600 }}>
+                        {d.name === "Baik" && "🟢 "}
+                        {d.name === "Perlu Perhatian" && "🟡 "}
+                        {d.name === "Kritis" && "🔴 "}
+                        {d.name}
+                      </div>
+                      <div style={{ fontSize: 12, color: theme.textMuted, marginLeft: "auto" }}>
+                        {d.value} ({Math.round((d.value / stats.total) * 100)}%)
+                      </div>
                     </div>
-                    <div style={{ fontSize: 12, color: theme.textMuted, marginLeft: "auto" }}>
-                      {d.value} ({Math.round((d.value / stats.total) * 100)}%)
-                    </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
-            {healthFilter && (
-              <div
-                onClick={() => setHealthFilter(null)}
-                style={{
-                  marginTop: 10,
-                  fontSize: 11,
-                  color: theme.primary,
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  textAlign: "center",
-                }}
-              >
-                ✕ Hapus filter "{healthFilter}"
-              </div>
-            )}
-          </Card>
-        )}
+              {healthFilter && (
+                <div
+                  onClick={() => setHealthFilter(null)}
+                  style={{
+                    marginTop: 10,
+                    fontSize: 11,
+                    color: theme.primary,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    textAlign: "center",
+                  }}
+                >
+                  ✕ Hapus filter "{healthFilter}"
+                </div>
+              )}
+            </Card>
+          )}
 
-        {/* Bar Chart - Trend 7 Hari */}
-        <Card style={{ marginBottom: 20, padding: 16 }}>
-          <SectionLabel style={{ marginBottom: 8 }}>Trend Inspeksi (7 Hari Terakhir)</SectionLabel>
-          <div style={{ height: 140 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={last7Days} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-                <XAxis
-                  dataKey="day"
-                  tick={{ fontSize: 11, fill: theme.textMuted }}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <YAxis tick={{ fontSize: 11, fill: theme.textMuted }} axisLine={false} tickLine={false} allowDecimals={false} />
-                <Tooltip
-                  contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${theme.border}` }}
-                />
-                <Bar dataKey="jumlah" fill={theme.primary} radius={[6, 6, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
+          {/* Bar Chart */}
+          <Card style={{ marginBottom: 20, padding: 16 }}>
+            <SectionLabel style={{ marginBottom: 8 }}>Trend Inspeksi (7 Hari Terakhir)</SectionLabel>
+            <div style={{ height: 140 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={last7Days} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+                  <XAxis
+                    dataKey="day"
+                    tick={{ fontSize: 11, fill: theme.textMuted }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 11, fill: theme.textMuted }}
+                    axisLine={false}
+                    tickLine={false}
+                    allowDecimals={false}
+                  />
+                  <Tooltip
+                    contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${theme.border}` }}
+                  />
+                  <Bar dataKey="jumlah" fill={theme.primary} radius={[6, 6, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </Card>
+        </div>
 
         {/* Filter Tabs */}
         <div style={{ display: "flex", gap: 8, marginBottom: 16, overflowX: "auto" }}>
@@ -516,103 +533,108 @@ const PertaminaDashboard = ({ onNav, onLogout, onOpenDetail }) => {
 
         <SectionLabel>Daftar Laporan</SectionLabel>
         {filteredList.length > 0 ? (
-          filteredList.map((item) => {
-            const tugasItem = tugasList.find((t) => t.inspeksi_id === item.id);
-            return (
-              <Card key={item.id} style={{ marginBottom: 10, padding: "14px 16px" }}>
-                <div
-                  onClick={() => onOpenDetail(item.id)}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    cursor: "pointer",
-                    marginBottom: 10,
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                    <div
-                      style={{
-                        width: 42,
-                        height: 42,
-                        borderRadius: 12,
-                        background: theme.primaryLight,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
-                    >
-                      <Icon name="car" size={18} color={theme.primary} />
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: isDesktop ? "repeat(3, 1fr)" : "1fr",
+            gap: isDesktop ? DESKTOP_GRID_GAP : 0,
+          }}>
+            {filteredList.map((item) => {
+              const tugasItem = tugasList.find((t) => t.inspeksi_id === item.id);
+              return (
+                <Card key={item.id} style={{ marginBottom: isDesktop ? 0 : 10, padding: "14px 16px" }}>
+                  <div
+                    onClick={() => onOpenDetail(item.id)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      cursor: "pointer",
+                      marginBottom: 10,
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <div
+                        style={{
+                          width: 42,
+                          height: 42,
+                          borderRadius: 12,
+                          background: theme.primaryLight,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <Icon name="car" size={18} color={theme.primary} />
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: 14, color: theme.text }}>
+                          {item.nomor_polisi}
+                        </div>
+                        <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 1 }}>
+                          {item.nama_armada} · {item.perusahaan_transportir}
+                        </div>
+                        <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2 }}>
+                          {formatDate(item.created_at)} · {formatTime(item.created_at)}
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <div style={{ fontWeight: 700, fontSize: 14, color: theme.text }}>
-                        {item.nomor_polisi}
-                      </div>
-                      <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 1 }}>
-                        {item.nama_armada} · {item.perusahaan_transportir}
-                      </div>
-                      <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2 }}>
-                        {formatDate(item.created_at)} · {formatTime(item.created_at)}
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+                      <Badge status={item.overallStatus} />
+                      <div
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 700,
+                          color: HEALTH_CATEGORY_COLORS[item.healthCategory],
+                        }}
+                      >
+                        {item.health.overall}%
                       </div>
                     </div>
                   </div>
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
-                    <Badge status={item.overallStatus} />
+
+                  {item.status === "ditugaskan" && (
                     <div
                       style={{
                         fontSize: 11,
-                        fontWeight: 700,
-                        color: HEALTH_CATEGORY_COLORS[item.healthCategory],
+                        fontWeight: 600,
+                        color: "#F59E0B",
+                        background: "#FEF3C7",
+                        padding: "6px 10px",
+                        borderRadius: 8,
+                        marginBottom: item.overallStatus === "Abnormal" ? 8 : 0,
                       }}
                     >
-                      {item.health.overall}%
+                      🔧 Sedang diperbaiki {tugasItem?.mekanik?.nama ? `oleh ${tugasItem.mekanik.nama}` : ""}
                     </div>
-                  </div>
-                </div>
+                  )}
+                  {item.status === "selesai" && (
+                    <div
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 600,
+                        color: theme.success,
+                        background: theme.successLight,
+                        padding: "6px 10px",
+                        borderRadius: 8,
+                      }}
+                    >
+                      ✓ Perbaikan selesai
+                    </div>
+                  )}
 
-                {/* Status perbaikan */}
-                {item.status === "ditugaskan" && (
-                  <div
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 600,
-                      color: "#F59E0B",
-                      background: "#FEF3C7",
-                      padding: "6px 10px",
-                      borderRadius: 8,
-                      marginBottom: item.overallStatus === "Abnormal" ? 8 : 0,
-                    }}
-                  >
-                    🔧 Sedang diperbaiki {tugasItem?.mekanik?.nama ? `oleh ${tugasItem.mekanik.nama}` : ""}
-                  </div>
-                )}
-                {item.status === "selesai" && (
-                  <div
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 600,
-                      color: theme.success,
-                      background: theme.successLight,
-                      padding: "6px 10px",
-                      borderRadius: 8,
-                    }}
-                  >
-                    ✓ Perbaikan selesai
-                  </div>
-                )}
-
-                {item.overallStatus === "Abnormal" && (!item.status || item.status === "baru") && (
-                  <Btn
-                    onClick={() => setAssignTarget(item)}
-                    variant="outline"
-                    style={{ padding: "8px", fontSize: 12 }}
-                  >
-                    Tugaskan Mekanik
-                  </Btn>
-                )}
-              </Card>
-            );
-          })
+                  {item.overallStatus === "Abnormal" && (!item.status || item.status === "baru") && (
+                    <Btn
+                      onClick={() => setAssignTarget(item)}
+                      variant="outline"
+                      style={{ padding: "8px", fontSize: 12 }}
+                    >
+                      Tugaskan Mekanik
+                    </Btn>
+                  )}
+                </Card>
+              );
+            })}
+          </div>
         ) : (
           <Card style={{ padding: "20px 16px", textAlign: "center" }}>
             <div style={{ fontSize: 13, color: theme.textMuted }}>Tidak ada data</div>

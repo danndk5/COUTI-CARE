@@ -8,17 +8,19 @@ import SectionLabel from "../components/SectionLabel";
 import theme from "../styles/theme";
 import { supabase } from "../lib/supabase";
 import { formatTime } from "../lib/dateHelper";
-// FIX: pakai helper terpusat, tidak tulis ulang logika status
 import { hitungStats, mapInspeksiItem } from "../lib/inspeksiHelper";
+import { useBreakpoint } from "../hooks/useBreakpoint";
+import { DESKTOP_GRID_GAP } from "../styles/layout";
 
 const DashboardScreen = ({ role, onNav, onLogout, onOpenDetail }) => {
+  const isDesktop = useBreakpoint();
+
   const [currentUser, setCurrentUser] = useState(null);
   const [stats, setStats] = useState({ total: 0, normal: 0, abnormal: 0 });
   const [recentChecks, setRecentChecks] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null); // FIX: tambah error state
+  const [error, setError] = useState(null);
 
-  // FIX: transportir & driver keduanya hanya lihat data sendiri
   const isTransportir = role === "transportir" || role === "driver";
 
   useEffect(() => {
@@ -56,7 +58,7 @@ const DashboardScreen = ({ role, onNav, onLogout, onOpenDetail }) => {
 
       const { data: inspeksiData, error: inspeksiError } = await query
         .order("created_at", { ascending: false })
-        .limit(50); // FIX: batasi fetch, jangan ambil semua tanpa limit
+        .limit(50);
 
       if (inspeksiError) {
         setError("Gagal memuat data inspeksi: " + inspeksiError.message);
@@ -65,7 +67,6 @@ const DashboardScreen = ({ role, onNav, onLogout, onOpenDetail }) => {
       }
 
       if (inspeksiData) {
-        // FIX: pakai helper, tidak duplikasi logika
         setStats(hitungStats(inspeksiData));
 
         const recent = inspeksiData.slice(0, 5).map((item) => ({
@@ -80,7 +81,7 @@ const DashboardScreen = ({ role, onNav, onLogout, onOpenDetail }) => {
     };
 
     loadData();
-  }, [role]); // FIX: gunakan role langsung sebagai dependency, bukan isTransportir
+  }, [role]);
 
   if (loading) {
     return (
@@ -90,7 +91,6 @@ const DashboardScreen = ({ role, onNav, onLogout, onOpenDetail }) => {
     );
   }
 
-  // FIX: tampilkan error dengan jelas
   if (error) {
     return (
       <div style={{ minHeight: "100vh", background: theme.bg, display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", padding: 24 }}>
@@ -109,7 +109,6 @@ const DashboardScreen = ({ role, onNav, onLogout, onOpenDetail }) => {
           <div>
             <div style={{ fontSize: 13, color: theme.textMuted }}>Selamat datang,</div>
             <div style={{ fontSize: 19, fontWeight: 800, color: theme.text }}>
-              {/* FIX: selalu tampilkan nama dari profile, bukan hardcode "Pertamina" */}
               {currentUser?.perusahaan || currentUser?.nama || "—"}
             </div>
             <div style={{
@@ -126,20 +125,37 @@ const DashboardScreen = ({ role, onNav, onLogout, onOpenDetail }) => {
         </div>
       </div>
 
-      <div style={{ padding: "20px 16px" }}>
+      <div style={{ padding: isDesktop ? "24px 32px" : "20px 16px" }}>
         {/* Stats */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 24 }}>
-          <div style={{ background: theme.primaryLight, borderRadius: 14, padding: "14px 10px", textAlign: "center" }}>
-            <div style={{ fontSize: 26, fontWeight: 800, color: theme.primary }}>{stats.total}</div>
-            <div style={{ fontSize: 10, color: theme.primary, fontWeight: 600, marginTop: 2, opacity: 0.8 }}>Total Cek</div>
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr 1fr",
+          gap: isDesktop ? DESKTOP_GRID_GAP : 10,
+          marginBottom: 24,
+        }}>
+          <div style={{
+            background: theme.primaryLight, borderRadius: 14,
+            padding: isDesktop ? "22px 16px" : "14px 10px",
+            textAlign: "center",
+          }}>
+            <div style={{ fontSize: isDesktop ? 32 : 26, fontWeight: 800, color: theme.primary }}>{stats.total}</div>
+            <div style={{ fontSize: isDesktop ? 12 : 10, color: theme.primary, fontWeight: 600, marginTop: 2, opacity: 0.8 }}>Total Cek</div>
           </div>
-          <div style={{ background: theme.successLight, borderRadius: 14, padding: "14px 10px", textAlign: "center" }}>
-            <div style={{ fontSize: 26, fontWeight: 800, color: theme.success }}>{stats.normal}</div>
-            <div style={{ fontSize: 10, color: theme.success, fontWeight: 600, marginTop: 2, opacity: 0.8 }}>Normal</div>
+          <div style={{
+            background: theme.successLight, borderRadius: 14,
+            padding: isDesktop ? "22px 16px" : "14px 10px",
+            textAlign: "center",
+          }}>
+            <div style={{ fontSize: isDesktop ? 32 : 26, fontWeight: 800, color: theme.success }}>{stats.normal}</div>
+            <div style={{ fontSize: isDesktop ? 12 : 10, color: theme.success, fontWeight: 600, marginTop: 2, opacity: 0.8 }}>Normal</div>
           </div>
-          <div style={{ background: theme.dangerLight, borderRadius: 14, padding: "14px 10px", textAlign: "center" }}>
-            <div style={{ fontSize: 26, fontWeight: 800, color: theme.danger }}>{stats.abnormal}</div>
-            <div style={{ fontSize: 10, color: theme.danger, fontWeight: 600, marginTop: 2, opacity: 0.8 }}>Abnormal</div>
+          <div style={{
+            background: theme.dangerLight, borderRadius: 14,
+            padding: isDesktop ? "22px 16px" : "14px 10px",
+            textAlign: "center",
+          }}>
+            <div style={{ fontSize: isDesktop ? 32 : 26, fontWeight: 800, color: theme.danger }}>{stats.abnormal}</div>
+            <div style={{ fontSize: isDesktop ? 12 : 10, color: theme.danger, fontWeight: 600, marginTop: 2, opacity: 0.8 }}>Abnormal</div>
           </div>
         </div>
 
@@ -155,7 +171,6 @@ const DashboardScreen = ({ role, onNav, onLogout, onOpenDetail }) => {
         {/* Recent Checks */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
           <SectionLabel>Pengecekan Terbaru</SectionLabel>
-          {/* FIX: tambah link ke riwayat lengkap */}
           {recentChecks.length > 0 && (
             <div
               onClick={() => onNav("history")}
@@ -167,28 +182,41 @@ const DashboardScreen = ({ role, onNav, onLogout, onOpenDetail }) => {
         </div>
 
         {recentChecks.length > 0 ? (
-          recentChecks.map((r) => ( // FIX: key pakai r.id bukan index
-            <Card
-              key={r.id}
-              onClick={() => onOpenDetail(r.id)}
-              style={{ marginBottom: 10, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px" }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <div style={{ width: 42, height: 42, borderRadius: 12, background: theme.primaryLight, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <Icon name="car" size={18} color={theme.primary} />
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: isDesktop ? "repeat(3, 1fr)" : "1fr",
+            gap: isDesktop ? DESKTOP_GRID_GAP : 0,
+          }}>
+            {recentChecks.map((r) => (
+              <Card
+                key={r.id}
+                onClick={() => onOpenDetail(r.id)}
+                style={{
+                  marginBottom: isDesktop ? 0 : 10,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "14px 16px",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{ width: 42, height: 42, borderRadius: 12, background: theme.primaryLight, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <Icon name="car" size={18} color={theme.primary} />
+                  </div>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: theme.text }}>{r.plat}</div>
+                    <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 1 }}>{r.armada} · {r.time}</div>
+                    <div style={{ fontSize: 11, color: theme.textMuted }}>{r.pemeriksa}</div>
+                  </div>
                 </div>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: 14, color: theme.text }}>{r.plat}</div>
-                  <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 1 }}>{r.armada} · {r.time}</div>
-                  <div style={{ fontSize: 11, color: theme.textMuted }}>{r.pemeriksa}</div>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+                  <Badge status={r.status} />
+                  <Icon name="chevron" size={14} color={theme.textMuted} />
                 </div>
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
-                <Badge status={r.status} />
-                <Icon name="chevron" size={14} color={theme.textMuted} />
-              </div>
-            </Card>
-          ))
+              </Card>
+            ))}
+          </div>
         ) : (
           <Card style={{ padding: "20px 16px", textAlign: "center" }}>
             <div style={{ fontSize: 13, color: theme.textMuted }}>Belum ada data pengecekan</div>

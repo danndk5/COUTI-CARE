@@ -6,22 +6,24 @@ import Card from "../components/Card";
 import theme from "../styles/theme";
 import { supabase } from "../lib/supabase";
 import { formatDate, formatTime } from "../lib/dateHelper";
-import { getStatusFromInspeksi } from "../lib/inspeksiHelper"; // FIX: hapus duplikasi logika status
+import { getStatusFromInspeksi } from "../lib/inspeksiHelper";
+import { useBreakpoint } from "../hooks/useBreakpoint";
+import { DESKTOP_GRID_GAP } from "../styles/layout";
 
 const RiwayatScreen = ({ role, onNav, onOpenDetail }) => {
+  const isDesktop = useBreakpoint();
+
   const [filterDate, setFilterDate] = useState("");
   const [filterPlat, setFilterPlat] = useState("");
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null); // FIX: tambah error state untuk error UI
+  const [error, setError] = useState(null);
 
   const isTransportir = role === "transportir";
 
-  // FIX: loadData di-ekstrak ke useCallback supaya bisa dipanggil
-  // langsung dari tombol "Coba Lagi" tanpa window.location.reload()
   const loadData = useCallback(async () => {
     setLoading(true);
-    setError(null); // reset error setiap kali load ulang
+    setError(null);
 
     try {
       const {
@@ -38,7 +40,6 @@ const RiwayatScreen = ({ role, onNav, onOpenDetail }) => {
 
       let query = supabase.from("inspeksi").select("*");
 
-      // Transportir hanya lihat data sendiri, Pertamina/Mekanik lihat semua
       if (isTransportir) {
         query = query.eq("user_id", user.id);
       }
@@ -57,17 +58,14 @@ const RiwayatScreen = ({ role, onNav, onOpenDetail }) => {
         pemeriksa: item.nama_pemeriksa,
         perusahaan: item.perusahaan_transportir,
         tanggal: item.created_at,
-        // FIX: pakai helper, hapus duplikasi logika Normal/Abnormal
         status: getStatusFromInspeksi(item),
       }));
 
       setData(mapped);
     } catch (err) {
-      // FIX: tampilkan error ke UI, bukan hanya console.error
       setError("Gagal memuat data. Silakan coba lagi.");
       console.error("Error loading riwayat:", err);
     } finally {
-      // FIX: setLoading(false) dijamin jalan meski ada error
       setLoading(false);
     }
   }, [isTransportir]);
@@ -76,7 +74,6 @@ const RiwayatScreen = ({ role, onNav, onOpenDetail }) => {
     loadData();
   }, [loadData]);
 
-  // FIX: filter tanggal pakai lokal string (bukan toISOString) supaya tidak timezone-shift ke UTC
   const filteredData = data.filter((d) => {
     const matchDate = filterDate
       ? formatDateLocal(d.tanggal) === filterDate
@@ -103,16 +100,26 @@ const RiwayatScreen = ({ role, onNav, onOpenDetail }) => {
         >
           Riwayat
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{
+          display: "flex",
+          gap: 8,
+          flexWrap: isDesktop ? "nowrap" : "nowrap",
+        }}>
           <input
             type="date"
             value={filterDate}
             onChange={(e) => setFilterDate(e.target.value)}
             style={{
-              flex: 1, padding: "9px 12px", borderRadius: 10,
-              border: `1.5px solid ${theme.border}`, background: theme.surface,
-              color: theme.text, fontSize: 12,
-              fontFamily: "'DM Sans', sans-serif", outline: "none",
+              flex: isDesktop ? "0 0 auto" : 1,
+              width: isDesktop ? 180 : undefined,
+              padding: "9px 12px",
+              borderRadius: 10,
+              border: `1.5px solid ${theme.border}`,
+              background: theme.surface,
+              color: theme.text,
+              fontSize: 12,
+              fontFamily: "'DM Sans', sans-serif",
+              outline: "none",
             }}
           />
           <input
@@ -120,10 +127,16 @@ const RiwayatScreen = ({ role, onNav, onOpenDetail }) => {
             value={filterPlat}
             onChange={(e) => setFilterPlat(e.target.value)}
             style={{
-              flex: 1, padding: "9px 12px", borderRadius: 10,
-              border: `1.5px solid ${theme.border}`, background: theme.surface,
-              color: theme.text, fontSize: 12,
-              fontFamily: "'DM Sans', sans-serif", outline: "none",
+              flex: isDesktop ? "0 0 auto" : 1,
+              width: isDesktop ? 200 : undefined,
+              padding: "9px 12px",
+              borderRadius: 10,
+              border: `1.5px solid ${theme.border}`,
+              background: theme.surface,
+              color: theme.text,
+              fontSize: 12,
+              fontFamily: "'DM Sans', sans-serif",
+              outline: "none",
             }}
           />
         </div>
@@ -134,8 +147,11 @@ const RiwayatScreen = ({ role, onNav, onOpenDetail }) => {
               setFilterPlat("");
             }}
             style={{
-              marginTop: 10, fontSize: 12,
-              color: theme.primary, fontWeight: 600, cursor: "pointer",
+              marginTop: 10,
+              fontSize: 12,
+              color: theme.primary,
+              fontWeight: 600,
+              cursor: "pointer",
             }}
           >
             ✕ Hapus filter
@@ -144,67 +160,72 @@ const RiwayatScreen = ({ role, onNav, onOpenDetail }) => {
       </div>
 
       {/* List */}
-      <div style={{ padding: "16px" }}>
+      <div style={{ padding: isDesktop ? "20px 32px" : "16px" }}>
         {loading ? (
           <Card style={{ padding: "20px 16px", textAlign: "center" }}>
             <div style={{ fontSize: 13, color: theme.textMuted }}>Memuat data...</div>
           </Card>
         ) : error ? (
-          // FIX: tampilkan error UI yang informatif
           <Card style={{ padding: "20px 16px", textAlign: "center" }}>
             <div style={{ fontSize: 13, color: theme.danger ?? "#e53e3e", marginBottom: 12 }}>
               ⚠️ {error}
             </div>
-            <Btn
-              onClick={loadData}
-              variant="ghost"
-              style={{ fontSize: 12 }}
-            >
+            <Btn onClick={loadData} variant="ghost" style={{ fontSize: 12 }}>
               Coba Lagi
             </Btn>
           </Card>
         ) : filteredData.length > 0 ? (
-          filteredData.map((d) => (
-            <Card key={d.id} style={{ marginBottom: 10 }}>
-              <div
-                style={{
-                  display: "flex", justifyContent: "space-between",
-                  alignItems: "flex-start", marginBottom: 10,
-                }}
-              >
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: 15, color: theme.text }}>
-                    {d.plat}
-                  </div>
-                  <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>
-                    {d.armada}
-                  </div>
-                  <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 3 }}>
-                    👤 {d.pemeriksa} · {d.perusahaan}
-                  </div>
-                  <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2 }}>
-                    {formatDate(d.tanggal)} · {formatTime(d.tanggal)}
-                  </div>
-                </div>
-                <Badge status={d.status} />
-              </div>
-              <div
-                style={{
-                  display: "flex", gap: 8,
-                  borderTop: `1px solid ${theme.border}`, paddingTop: 10,
-                }}
-              >
-                <Btn
-                  onClick={() => onOpenDetail(d.id)}
-                  variant="ghost"
-                  icon="eye"
-                  style={{ fontSize: 12, padding: "8px", flex: 1 }}
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: isDesktop ? "repeat(3, 1fr)" : "1fr",
+            gap: isDesktop ? DESKTOP_GRID_GAP : 0,
+          }}>
+            {filteredData.map((d) => (
+              <Card key={d.id} style={{ marginBottom: isDesktop ? 0 : 10 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "flex-start",
+                    marginBottom: 10,
+                  }}
                 >
-                  Lihat Detail
-                </Btn>
-              </div>
-            </Card>
-          ))
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 15, color: theme.text }}>
+                      {d.plat}
+                    </div>
+                    <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>
+                      {d.armada}
+                    </div>
+                    <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 3 }}>
+                      👤 {d.pemeriksa} · {d.perusahaan}
+                    </div>
+                    <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2 }}>
+                      {formatDate(d.tanggal)} · {formatTime(d.tanggal)}
+                    </div>
+                  </div>
+                  <Badge status={d.status} />
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    borderTop: `1px solid ${theme.border}`,
+                    paddingTop: 10,
+                  }}
+                >
+                  <Btn
+                    onClick={() => onOpenDetail(d.id)}
+                    variant="ghost"
+                    icon="eye"
+                    style={{ fontSize: 12, padding: "8px", flex: 1 }}
+                  >
+                    Lihat Detail
+                  </Btn>
+                </div>
+              </Card>
+            ))}
+          </div>
         ) : (
           <Card style={{ padding: "20px 16px", textAlign: "center" }}>
             <div style={{ fontSize: 13, color: theme.textMuted }}>
