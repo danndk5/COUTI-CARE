@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import GlobalStyles from "./styles/GlobalStyles";
 import LoginScreen        from "./screens/LoginScreen";
 import RegisterScreen     from "./screens/RegisterScreen";
@@ -14,6 +14,7 @@ import { supabase } from "./lib/supabase";
 import RiwayatKerusakanScreen from "./screens/RiwayatKerusakanScreen";
 import { useBreakpoint } from "./hooks/useBreakpoint";
 import { MOBILE_MAX_WIDTH, DESKTOP_CONTENT_MAX_WIDTH } from "./styles/layout";
+import theme from "./styles/theme"; // FIX EXIT CONFIRM: dipakai untuk styling modal konfirmasi keluar
 
 const App = () => {
   const [screen, setScreen] = useState("login");
@@ -21,7 +22,18 @@ const App = () => {
   const [loading, setLoading] = useState(true);
   const [selectedInspeksiId, setSelectedInspeksiId] = useState(null);
   const [selectedTugasId, setSelectedTugasId] = useState(null);
+  const [showExitConfirm, setShowExitConfirm] = useState(false); // FIX EXIT CONFIRM
   const isDesktop = useBreakpoint();
+
+  // FIX BACK BUTTON + EXIT CONFIRM: ref supaya handler popstate (terdaftar
+  // sekali via useEffect deps []) selalu baca nilai TERBARU, bukan nilai
+  // saat effect pertama jalan.
+  const screenRef = useRef(screen);
+  useEffect(() => { screenRef.current = screen; }, [screen]);
+
+  // FIX EXIT CONFIRM: flag penanda "user sudah klik Ya, Keluar", supaya
+  // proses back() berikutnya tidak ditahan lagi oleh guard.
+  const allowExitRef = useRef(false);
 
   const fetchRoleAndNavigate = async (userId) => {
     const { data: profile, error } = await supabase
@@ -32,17 +44,29 @@ const App = () => {
 
     if (error || !profile) {
       await supabase.auth.signOut();
-      // FIX BACK BUTTON: replaceState (bukan pushState) untuk screen "anchor"
-      // (login/dashboard) — supaya back button tidak nyangkut di history lama
-      window.history.replaceState({ screen: "login" }, "");
-      setScreen("login");
+      enterLogin();
       setRole(null);
       return;
     }
 
     setRole(profile.role);
+    enterDashboard();
+  };
+
+  // FIX BACK BUTTON: helper masuk ke "dashboard" sekaligus pasang history
+  // dasar + 1 entry penjaga di atasnya (untuk exit-confirm).
+  const enterDashboard = () => {
     window.history.replaceState({ screen: "dashboard" }, "");
+    window.history.pushState({ screen: "dashboard", guard: true }, "");
     setScreen("dashboard");
+  };
+
+  // FIX BACK BUTTON: helper masuk ke "login" — tanpa guard, karena back
+  // dari Login memang dibiarkan keluar normal (sesuai yang diminta: cuma
+  // dashboard/halaman utama yang butuh konfirmasi).
+  const enterLogin = () => {
+    window.history.replaceState({ screen: "login" }, "");
+    setScreen("login");
   };
 
   useEffect(() => {
@@ -51,7 +75,6 @@ const App = () => {
       if (session) {
         await fetchRoleAndNavigate(session.user.id);
       } else {
-        // FIX BACK BUTTON: pastikan ada 1 history entry dasar sejak awal load
         window.history.replaceState({ screen: "login" }, "");
       }
       setLoading(false);
@@ -61,10 +84,7 @@ const App = () => {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === "SIGNED_OUT") {
-        // FIX BACK BUTTON: replaceState supaya back tidak bisa balik ke
-        // screen yang butuh login setelah logout
-        window.history.replaceState({ screen: "login" }, "");
-        setScreen("login");
+        enterLogin();
         setRole(null);
         setSelectedInspeksiId(null);
         setSelectedTugasId(null);
@@ -77,39 +97,65 @@ const App = () => {
     return () => subscription?.unsubscribe();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // FIX BACK BUTTON: dengarkan tombol back fisik HP / tombol back browser.
-  // Setiap kali itu ditekan, browser otomatis "pop" 1 entry dari history dan
-  // fire event ini — kita tinggal sinkronkan state screen sesuai isinya.
+  // FIX BACK BUTTON + EXIT CONFIRM
   useEffect(() => {
     const handlePopState = (event) => {
       const state = event.state;
-      if (state?.screen) {
-        setScreen(state.screen);
-        if ("selectedInspeksiId" in state) setSelectedInspeksiId(state.selectedInspeksiId);
-        if ("selectedTugasId" in state) setSelectedTugasId(state.selectedTugasId);
+      const incomingScreen = state?.screen;
+
+      if (!incomingScreen) return;
+
+      // Sedang proses keluar yang SUDAH dikonfirmasi user (klik "Ya, Keluar").
+      // Begitu pop pertama mendarat balik di "dashboard" (entry dasar, bukan
+      // guard), mundur sekali lagi supaya benar-benar keluar dari app.
+      if (allowExitRef.current) {
+        if (incomingScreen === "dashboard") {
+          window.history.back();
+        }
+        return;
       }
-      // kalau state null/kosong, berarti sudah di entry paling awal —
-      // biarkan browser/HP lanjut keluar dari web app, itu memang benar
+
+      // GUARD: back terjadi DAN sebelumnya kita sudah di dashboard (bukan
+      // datang dari screen lain) → ini upaya keluar dari halaman utama,
+      // bukan navigasi biasa. Tahan, pasang ulang guard, tampilkan konfirmasi.
+      if (incomingScreen === "dashboard" && screenRef.current === "dashboard") {
+        window.history.pushState({ screen: "dashboard", guard: true }, "");
+        setShowExitConfirm(true);
+        return;
+      }
+
+      // Navigasi back biasa antar screen
+      setScreen(incomingScreen);
+      if (state && "selectedInspeksiId" in state) setSelectedInspeksiId(state.selectedInspeksiId ?? null);
+      if (state && "selectedTugasId" in state) setSelectedTugasId(state.selectedTugasId ?? null);
     };
 
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
+  // FIX EXIT CONFIRM: dipanggil saat user klik "Ya, Keluar" di dialog
+  const confirmExit = () => {
+    setShowExitConfirm(false);
+    allowExitRef.current = true;
+    window.history.back();
+  };
+
+  const cancelExit = () => {
+    setShowExitConfirm(false);
+    // Tidak perlu push apa pun lagi — posisi history sudah di-restore
+    // (guard entry) tepat sebelum dialog ini ditampilkan.
+  };
+
   const handleLogin = (r) => {
     setRole(r);
-    window.history.replaceState({ screen: "dashboard" }, "");
-    setScreen("dashboard");
+    enterDashboard();
   };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    // onAuthStateChange SIGNED_OUT akan handle reset state & history
   };
 
-  // FIX BACK BUTTON: nav() sekarang push history entry baru setiap navigasi,
-  // signature TIDAK berubah — semua screen yang sudah pakai onNav={nav}
-  // tidak perlu diubah sama sekali.
   const nav = (s) => {
     window.history.pushState({ screen: s }, "");
     setScreen(s);
@@ -197,6 +243,75 @@ const App = () => {
         {safeScreen === "tugas-detail" && <TugasDetailScreen tugasId={selectedTugasId} onBack={() => window.history.back()} />}
         {safeScreen === "riwayat-kerusakan" && <RiwayatKerusakanScreen onBack={() => window.history.back()} />}
       </div>
+
+      {/* FIX EXIT CONFIRM: dialog konfirmasi keluar dari halaman utama */}
+      {showExitConfirm && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 2000,
+          }}
+        >
+          <div
+            style={{
+              background: theme.surface,
+              borderRadius: 16,
+              padding: 24,
+              width: "90%",
+              maxWidth: 320,
+              textAlign: "center",
+            }}
+          >
+            <div style={{ fontSize: 16, fontWeight: 800, color: theme.text, marginBottom: 8 }}>
+              Keluar dari aplikasi?
+            </div>
+            <div style={{ fontSize: 13, color: theme.textMuted, marginBottom: 20 }}>
+              Kamu akan keluar dari GPS &amp; CCTV Checker.
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button
+                onClick={cancelExit}
+                style={{
+                  flex: 1,
+                  padding: "10px 0",
+                  borderRadius: 10,
+                  border: `1.5px solid ${theme.border}`,
+                  background: theme.surface,
+                  color: theme.text,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  fontFamily: "'DM Sans', sans-serif",
+                  cursor: "pointer",
+                }}
+              >
+                Batal
+              </button>
+              <button
+                onClick={confirmExit}
+                style={{
+                  flex: 1,
+                  padding: "10px 0",
+                  borderRadius: 10,
+                  border: "none",
+                  background: theme.danger,
+                  color: "#fff",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  fontFamily: "'DM Sans', sans-serif",
+                  cursor: "pointer",
+                }}
+              >
+                Ya, Keluar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
