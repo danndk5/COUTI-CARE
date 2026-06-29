@@ -6,9 +6,12 @@ import Icon from "../components/Icon";
 import theme from "../styles/theme";
 import { supabase } from "../lib/supabase";
 
+// Hanya 2 pilihan role. Value "transportir" dipakai sebagai role gabungan
+// "Teknisi" (driver + mekanik lama), supaya tetap kompatibel dengan semua
+// pengecekan role === "transportir" yang sudah ada di banyak file lain
+// (BottomNav, App.jsx renderDashboard, dll) tanpa perlu migrasi data.
 const ROLES = [
-  { value: "transportir", label: "Pemeriksa / Driver", icon: "car", desc: "Isi form pengecekan GPS & CCTV" },
-  { value: "mekanik", label: "Mekanik", icon: "wrench", desc: "Perbaiki & laporkan temuan" },
+  { value: "transportir", label: "Teknisi", icon: "wrench", desc: "Periksa, inspeksi, dan perbaiki kendaraan" },
   { value: "pertamina", label: "Pertamina / Depot", icon: "eye", desc: "Monitor & tugaskan perbaikan" },
 ];
 

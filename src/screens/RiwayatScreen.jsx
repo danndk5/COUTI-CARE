@@ -19,7 +19,7 @@ const RiwayatScreen = ({ role, onNav, onOpenDetail }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const isTransportir = role === "transportir";
+  const isTeknisi = role === "teknisi";
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -40,7 +40,7 @@ const RiwayatScreen = ({ role, onNav, onOpenDetail }) => {
 
       let query = supabase.from("inspeksi").select("*");
 
-      if (isTransportir) {
+      if (isTeknisi) {
         query = query.eq("user_id", user.id);
       }
 
@@ -68,7 +68,7 @@ const RiwayatScreen = ({ role, onNav, onOpenDetail }) => {
     } finally {
       setLoading(false);
     }
-  }, [isTransportir]);
+  }, [isTeknisi]);
 
   useEffect(() => {
     loadData();

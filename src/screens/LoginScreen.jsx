@@ -6,7 +6,7 @@ import Icon from "../components/Icon";
 import theme from "../styles/theme";
 import { supabase } from "../lib/supabase";
 
-const LoginScreen = ({ onLogin, onGoRegister }) => {
+const LoginScreen = ({ onLogin, onGoRegister, onForgotPassword }) => {
   const [email, setEmail] = useState("");
   const [pass, setPass] = useState("");
   const [loading, setLoading] = useState(false);
@@ -123,6 +123,16 @@ const LoginScreen = ({ onLogin, onGoRegister }) => {
             {loading ? "Memuat..." : "Masuk"}
           </Btn>
         </div>
+
+        <div style={{ textAlign: "center", marginTop: 12 }}>
+          <span
+            onClick={onForgotPassword}
+            style={{ color: theme.primary, fontSize: 13, cursor: "pointer" }}
+          >
+            Lupa password?
+          </span>
+        </div>
+
         <div
           style={{
             textAlign: "center",

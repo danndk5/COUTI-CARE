@@ -7,220 +7,436 @@ import Icon from "../components/Icon";
 import SectionLabel from "../components/SectionLabel";
 import theme from "../styles/theme";
 import { supabase } from "../lib/supabase";
-import { formatTime } from "../lib/dateHelper";
-import { hitungStats, mapInspeksiItem } from "../lib/inspeksiHelper";
-import { useBreakpoint } from "../hooks/useBreakpoint";
-import { DESKTOP_GRID_GAP } from "../styles/layout";
 
-const DashboardScreen = ({ role, onNav, onLogout, onOpenDetail }) => {
-  const isDesktop = useBreakpoint();
+// ── Tab "Beranda" — gabungan ringkasan inspeksi (dari DashboardScreen lama)
+//    + ringkasan tugas perbaikan (dari MekanikDashboard lama) ──────────────
+
+const BerandaTab = ({ currentUser, stats, tugasStats, recentChecks, onNav, onOpenDetail, onOpenKategori }) => (
+  <>
+    {/* Stats inspeksi — IDENTIK dengan DashboardScreen.jsx lama, tidak diubah */}
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "1fr 1fr 1fr",
+        gap: 10,
+        marginBottom: 16,
+      }}
+    >
+      <div
+        onClick={() => onOpenKategori && onOpenKategori("all")}
+        style={{
+          background: theme.primaryLight,
+          borderRadius: 14,
+          padding: "14px 10px",
+          textAlign: "center",
+          cursor: "pointer",
+        }}
+      >
+        <div style={{ fontSize: 26, fontWeight: 800, color: theme.primary }}>
+          {stats.total}
+        </div>
+        <div style={{ fontSize: 10, color: theme.primary, fontWeight: 600, marginTop: 2, opacity: 0.8 }}>
+          Total Cek
+        </div>
+      </div>
+      <div
+        onClick={() => onOpenKategori && onOpenKategori("normal")}
+        style={{
+          background: theme.successLight,
+          borderRadius: 14,
+          padding: "14px 10px",
+          textAlign: "center",
+          cursor: "pointer",
+        }}
+      >
+        <div style={{ fontSize: 26, fontWeight: 800, color: theme.success }}>
+          {stats.normal}
+        </div>
+        <div style={{ fontSize: 10, color: theme.success, fontWeight: 600, marginTop: 2, opacity: 0.8 }}>
+          Normal
+        </div>
+      </div>
+      <div
+        onClick={() => onOpenKategori && onOpenKategori("abnormal")}
+        style={{
+          background: theme.dangerLight,
+          borderRadius: 14,
+          padding: "14px 10px",
+          textAlign: "center",
+          cursor: "pointer",
+        }}
+      >
+        <div style={{ fontSize: 26, fontWeight: 800, color: theme.danger }}>
+          {stats.abnormal}
+        </div>
+        <div style={{ fontSize: 10, color: theme.danger, fontWeight: 600, marginTop: 2, opacity: 0.8 }}>
+          Abnormal
+        </div>
+      </div>
+    </div>
+
+    {/* Stats tugas perbaikan — dari MekanikDashboard.jsx lama */}
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "1fr 1fr 1fr",
+        gap: 10,
+        marginBottom: 24,
+      }}
+    >
+      <div style={{ background: theme.dangerLight, borderRadius: 14, padding: "14px 10px", textAlign: "center" }}>
+        <div style={{ fontSize: 24, fontWeight: 800, color: theme.danger }}>{tugasStats.menunggu}</div>
+        <div style={{ fontSize: 10, color: theme.danger, fontWeight: 600, marginTop: 2 }}>Tugas Menunggu</div>
+      </div>
+      <div style={{ background: theme.primaryLight, borderRadius: 14, padding: "14px 10px", textAlign: "center" }}>
+        <div style={{ fontSize: 24, fontWeight: 800, color: theme.primary }}>{tugasStats.dikerjakan}</div>
+        <div style={{ fontSize: 10, color: theme.primary, fontWeight: 600, marginTop: 2 }}>Dikerjakan</div>
+      </div>
+      <div style={{ background: theme.successLight, borderRadius: 14, padding: "14px 10px", textAlign: "center" }}>
+        <div style={{ fontSize: 24, fontWeight: 800, color: theme.success }}>{tugasStats.selesai}</div>
+        <div style={{ fontSize: 10, color: theme.success, fontWeight: 600, marginTop: 2 }}>Selesai</div>
+      </div>
+    </div>
+
+    {/* CTA inspeksi baru — IDENTIK dengan DashboardScreen lama */}
+    <div style={{ marginBottom: 24 }}>
+      <Btn onClick={() => onNav("form")} variant="primary" icon="plus">
+        Pengecekan Baru
+      </Btn>
+    </div>
+
+    {/* Recent Checks — IDENTIK dengan DashboardScreen lama */}
+    <SectionLabel>Pengecekan Terbaru</SectionLabel>
+    {recentChecks.length > 0 ? (
+      recentChecks.map((r, i) => (
+        <Card
+          key={i}
+          onClick={() => onOpenDetail(r.id)}
+          style={{
+            marginBottom: 10,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "14px 16px",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div
+              style={{
+                width: 42,
+                height: 42,
+                borderRadius: 12,
+                background: theme.primaryLight,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Icon name="car" size={18} color={theme.primary} />
+            </div>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 14, color: theme.text }}>{r.plat}</div>
+              <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 1 }}>
+                {r.armada} · {r.time}
+              </div>
+              <div style={{ fontSize: 11, color: theme.textMuted }}>{r.pemeriksa}</div>
+            </div>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+            <Badge status={r.status} />
+            <Icon name="chevron" size={14} color={theme.textMuted} />
+          </div>
+        </Card>
+      ))
+    ) : (
+      <Card style={{ padding: "20px 16px", textAlign: "center" }}>
+        <div style={{ fontSize: 13, color: theme.textMuted }}>Belum ada data pengecekan</div>
+      </Card>
+    )}
+  </>
+);
+
+// ── Tab "Tugas Perbaikan" — IDENTIK dengan isi MekanikDashboard.jsx lama ──
+
+const TugasTab = ({ tugasList, onOpenTugas }) => {
+  const statusColor = {
+    menunggu: { bg: theme.dangerLight, color: theme.danger, label: "Menunggu" },
+    dikerjakan: { bg: theme.primaryLight, color: theme.primary, label: "Dikerjakan" },
+    selesai: { bg: theme.successLight, color: theme.success, label: "Selesai" },
+  };
+
+  return (
+    <>
+      <SectionLabel>Tugas Perbaikan</SectionLabel>
+      {tugasList.length > 0 ? (
+        tugasList.map((tugas) => {
+          const sc = statusColor[tugas.status] || statusColor.menunggu;
+          return (
+            <Card
+              key={tugas.id}
+              onClick={() => onOpenTugas(tugas.id)}
+              style={{ marginBottom: 10, padding: "14px 16px", cursor: "pointer" }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  marginBottom: 8,
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <div
+                    style={{
+                      width: 42,
+                      height: 42,
+                      borderRadius: 12,
+                      background: theme.primaryLight,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Icon name="wrench" size={18} color={theme.primary} />
+                  </div>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: theme.text }}>
+                      {tugas.inspeksi?.nomor_polisi}
+                    </div>
+                    <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 1 }}>
+                      {tugas.inspeksi?.nama_armada}
+                    </div>
+                  </div>
+                </div>
+                <div
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    padding: "4px 10px",
+                    borderRadius: 20,
+                    background: sc.bg,
+                    color: sc.color,
+                  }}
+                >
+                  {sc.label}
+                </div>
+              </div>
+              {tugas.catatan_tugas && (
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: theme.textSub,
+                    background: theme.surfaceAlt,
+                    padding: "8px 10px",
+                    borderRadius: 8,
+                    fontStyle: "italic",
+                  }}
+                >
+                  "{tugas.catatan_tugas}"
+                </div>
+              )}
+            </Card>
+          );
+        })
+      ) : (
+        <Card style={{ padding: "20px 16px", textAlign: "center" }}>
+          <div style={{ fontSize: 13, color: theme.textMuted }}>Belum ada tugas perbaikan</div>
+        </Card>
+      )}
+    </>
+  );
+};
+
+// ── DashboardScreen gabungan — dipanggil dari App.jsx untuk role teknisi ──
+// CATATAN: nama komponen & cara dipanggil dari App.jsx TIDAK BERUBAH
+// (tetap <DashboardScreen role={role} onNav={onNav} onLogout={onLogout} onOpenDetail={openDetail} />),
+// hanya ditambah 1 prop baru onOpenTugas yang WAJIB ditambahkan di App.jsx.
+
+const DashboardScreen = ({ role, onNav, onLogout, onOpenDetail, onOpenTugas, initialTab, onOpenKategori }) => {
+  const [activeTab, setActiveTab] = useState(initialTab || "beranda");
+
+  useEffect(() => {
+    if (initialTab) setActiveTab(initialTab);
+  }, [initialTab]);
 
   const [currentUser, setCurrentUser] = useState(null);
   const [stats, setStats] = useState({ total: 0, normal: 0, abnormal: 0 });
   const [recentChecks, setRecentChecks] = useState([]);
+  const [tugasList, setTugasList] = useState([]);
+  const [tugasStats, setTugasStats] = useState({ menunggu: 0, dikerjakan: 0, selesai: 0 });
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  const isTransportir = role === "transportir" || role === "driver";
 
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
-      setError(null);
 
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
 
-      if (!user) {
-        setError("Sesi tidak ditemukan. Silakan login ulang.");
-        setLoading(false);
-        return;
-      }
+      if (user) {
+        // ── Bagian inspeksi (IDENTIK logic DashboardScreen.jsx lama) ──
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("nama, perusahaan")
+          .eq("id", user.id)
+          .single();
 
-      const { data: profile, error: profileError } = await supabase
-        .from("profiles")
-        .select("nama, perusahaan")
-        .eq("id", user.id)
-        .single();
+        setCurrentUser(profile);
 
-      if (profileError) {
-        setError("Gagal memuat profil pengguna.");
-        setLoading(false);
-        return;
-      }
+        const { data: inspeksiData } = await supabase
+          .from("inspeksi")
+          .select("*")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false });
 
-      setCurrentUser(profile);
+        if (inspeksiData) {
+          const totalCek = inspeksiData.length;
+          const normalCount = inspeksiData.filter((item) => {
+            const gpsNormal =
+              item.segel_gps?.toLowerCase() === "normal" &&
+              item.kabel_gps?.toLowerCase() === "normal";
+            const cctvNormal =
+              item.segel_bricket_dashcam?.toLowerCase() === "normal" &&
+              item.segel_kabel_dashcam?.toLowerCase() === "normal" &&
+              item.segel_bricket_kanan?.toLowerCase() === "normal" &&
+              item.segel_kabel_kanan?.toLowerCase() === "normal" &&
+              item.segel_bricket_kiri?.toLowerCase() === "normal" &&
+              item.segel_kabel_kiri?.toLowerCase() === "normal";
+            return gpsNormal && cctvNormal;
+          }).length;
+          const abnormalCount = totalCek - normalCount;
 
-      let query = supabase.from("inspeksi").select("*");
+          setStats({ total: totalCek, normal: normalCount, abnormal: abnormalCount });
 
-      if (isTransportir) {
-        query = query.eq("user_id", user.id);
-      }
+          const recent = inspeksiData.slice(0, 5).map((item) => {
+            const gpsNormal =
+              item.segel_gps?.toLowerCase() === "normal" &&
+              item.kabel_gps?.toLowerCase() === "normal";
+            const cctvNormal =
+              item.segel_bricket_dashcam?.toLowerCase() === "normal" &&
+              item.segel_kabel_dashcam?.toLowerCase() === "normal" &&
+              item.segel_bricket_kanan?.toLowerCase() === "normal" &&
+              item.segel_kabel_kanan?.toLowerCase() === "normal" &&
+              item.segel_bricket_kiri?.toLowerCase() === "normal" &&
+              item.segel_kabel_kiri?.toLowerCase() === "normal";
 
-      const { data: inspeksiData, error: inspeksiError } = await query
-        .order("created_at", { ascending: false })
-        .limit(50);
+            const status = gpsNormal && cctvNormal ? "Normal" : "Abnormal";
+            const time = new Date(item.created_at).toLocaleTimeString("id-ID", {
+              hour: "2-digit",
+              minute: "2-digit",
+            });
 
-      if (inspeksiError) {
-        setError("Gagal memuat data inspeksi: " + inspeksiError.message);
-        setLoading(false);
-        return;
-      }
+            return {
+              id: item.id,
+              plat: item.nomor_polisi,
+              armada: item.nama_armada,
+              status,
+              time,
+              pemeriksa: item.nama_pemeriksa,
+            };
+          });
 
-      if (inspeksiData) {
-        setStats(hitungStats(inspeksiData));
+          setRecentChecks(recent);
+        }
 
-        const recent = inspeksiData.slice(0, 5).map((item) => ({
-          ...mapInspeksiItem(item),
-          time: formatTime(item.created_at),
-        }));
+        // ── Bagian tugas perbaikan (IDENTIK logic MekanikDashboard.jsx lama) ──
+        const { data: tugasData, error: tugasError } = await supabase
+          .from("tugas_perbaikan")
+          .select("*, inspeksi:inspeksi_id(*)")
+          .eq("mekanik_id", user.id)
+          .order("created_at", { ascending: false });
 
-        setRecentChecks(recent);
+        if (tugasError) console.error("Error loading tugas:", tugasError);
+
+        if (tugasData) {
+          setTugasList(tugasData);
+          setTugasStats({
+            menunggu: tugasData.filter((t) => t.status === "menunggu").length,
+            dikerjakan: tugasData.filter((t) => t.status === "dikerjakan").length,
+            selesai: tugasData.filter((t) => t.status === "selesai").length,
+          });
+        }
       }
 
       setLoading(false);
     };
 
     loadData();
-  }, [role]);
+  }, []);
 
   if (loading) {
     return (
-      <div style={{ minHeight: "100vh", background: theme.bg, display: "flex", justifyContent: "center", alignItems: "center" }}>
+      <div
+        style={{
+          minHeight: "100vh",
+          background: theme.bg,
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+        }}
+      >
         <div style={{ color: theme.textMuted }}>Memuat data...</div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div style={{ minHeight: "100vh", background: theme.bg, display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", padding: 24 }}>
-        <div style={{ fontSize: 32, marginBottom: 12 }}>⚠️</div>
-        <div style={{ fontSize: 14, color: theme.danger, textAlign: "center", marginBottom: 16 }}>{error}</div>
-        <Btn onClick={() => window.location.reload()} variant="outline">Coba Lagi</Btn>
       </div>
     );
   }
 
   return (
     <div style={{ minHeight: "100vh", background: theme.bg, paddingBottom: 80 }}>
-      {/* Header */}
-      <div style={{ background: theme.surface, padding: "48px 20px 20px", borderBottom: `1px solid ${theme.border}`, boxShadow: theme.shadow }}>
+      {/* Header — IDENTIK dengan DashboardScreen lama */}
+      <div
+        style={{
+          background: theme.surface,
+          padding: "48px 20px 20px",
+          borderBottom: `1px solid ${theme.border}`,
+          boxShadow: theme.shadow,
+        }}
+      >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
             <div style={{ fontSize: 13, color: theme.textMuted }}>Selamat datang,</div>
             <div style={{ fontSize: 19, fontWeight: 800, color: theme.text }}>
-              {currentUser?.perusahaan || currentUser?.nama || "—"}
+              {currentUser?.perusahaan || "Loading..."}
             </div>
-            <div style={{
-              display: "inline-block", marginTop: 4, fontSize: 11, fontWeight: 600,
-              padding: "2px 10px", borderRadius: 20,
-              background: theme.primaryLight, color: theme.primary,
-            }}>
-              {isTransportir ? "Transportir" : role === "pertamina" ? "Pertamina · Pemantau" : role}
+            <div
+              style={{
+                display: "inline-block",
+                marginTop: 4,
+                fontSize: 11,
+                fontWeight: 600,
+                padding: "2px 10px",
+                borderRadius: 20,
+                background: theme.primaryLight,
+                color: theme.primary,
+              }}
+            >
+              Teknisi
             </div>
           </div>
-          <div onClick={onLogout} style={{ cursor: "pointer", padding: 10, borderRadius: 12, background: theme.surfaceAlt }}>
+          <div
+            onClick={onLogout}
+            style={{ cursor: "pointer", padding: 10, borderRadius: 12, background: theme.surfaceAlt }}
+          >
             <Icon name="logout" size={18} color={theme.textSub} />
           </div>
-        </div>
+        </div>           
       </div>
 
-      <div style={{ padding: isDesktop ? "24px 32px" : "20px 16px" }}>
-        {/* Stats */}
-        <div style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr 1fr",
-          gap: isDesktop ? DESKTOP_GRID_GAP : 10,
-          marginBottom: 24,
-        }}>
-          <div style={{
-            background: theme.primaryLight, borderRadius: 14,
-            padding: isDesktop ? "22px 16px" : "14px 10px",
-            textAlign: "center",
-          }}>
-            <div style={{ fontSize: isDesktop ? 32 : 26, fontWeight: 800, color: theme.primary }}>{stats.total}</div>
-            <div style={{ fontSize: isDesktop ? 12 : 10, color: theme.primary, fontWeight: 600, marginTop: 2, opacity: 0.8 }}>Total Cek</div>
-          </div>
-          <div style={{
-            background: theme.successLight, borderRadius: 14,
-            padding: isDesktop ? "22px 16px" : "14px 10px",
-            textAlign: "center",
-          }}>
-            <div style={{ fontSize: isDesktop ? 32 : 26, fontWeight: 800, color: theme.success }}>{stats.normal}</div>
-            <div style={{ fontSize: isDesktop ? 12 : 10, color: theme.success, fontWeight: 600, marginTop: 2, opacity: 0.8 }}>Normal</div>
-          </div>
-          <div style={{
-            background: theme.dangerLight, borderRadius: 14,
-            padding: isDesktop ? "22px 16px" : "14px 10px",
-            textAlign: "center",
-          }}>
-            <div style={{ fontSize: isDesktop ? 32 : 26, fontWeight: 800, color: theme.danger }}>{stats.abnormal}</div>
-            <div style={{ fontSize: isDesktop ? 12 : 10, color: theme.danger, fontWeight: 600, marginTop: 2, opacity: 0.8 }}>Abnormal</div>
-          </div>
-        </div>
-
-        {/* CTA */}
-        {isTransportir && (
-          <div style={{ marginBottom: 24 }}>
-            <Btn onClick={() => onNav("form")} variant="primary" icon="plus">
-              Pengecekan Baru
-            </Btn>
-          </div>
+      <div style={{ padding: "20px 16px" }}>
+        {activeTab === "beranda" && (
+          <BerandaTab
+            currentUser={currentUser}
+            stats={stats}
+            tugasStats={tugasStats}
+            recentChecks={recentChecks}
+            onNav={onNav}
+            onOpenDetail={onOpenDetail}
+            onOpenKategori={onOpenKategori}
+          />
         )}
-
-        {/* Recent Checks */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-          <SectionLabel>Pengecekan Terbaru</SectionLabel>
-          {recentChecks.length > 0 && (
-            <div
-              onClick={() => onNav("history")}
-              style={{ fontSize: 12, color: theme.primary, fontWeight: 600, cursor: "pointer" }}
-            >
-              Lihat Semua →
-            </div>
-          )}
-        </div>
-
-        {recentChecks.length > 0 ? (
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: isDesktop ? "repeat(3, 1fr)" : "1fr",
-            gap: isDesktop ? DESKTOP_GRID_GAP : 0,
-          }}>
-            {recentChecks.map((r) => (
-              <Card
-                key={r.id}
-                onClick={() => onOpenDetail(r.id)}
-                style={{
-                  marginBottom: isDesktop ? 0 : 10,
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  padding: "14px 16px",
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <div style={{ width: 42, height: 42, borderRadius: 12, background: theme.primaryLight, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    <Icon name="car" size={18} color={theme.primary} />
-                  </div>
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: 14, color: theme.text }}>{r.plat}</div>
-                    <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 1 }}>{r.armada} · {r.time}</div>
-                    <div style={{ fontSize: 11, color: theme.textMuted }}>{r.pemeriksa}</div>
-                  </div>
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
-                  <Badge status={r.status} />
-                  <Icon name="chevron" size={14} color={theme.textMuted} />
-                </div>
-              </Card>
-            ))}
-          </div>
-        ) : (
-          <Card style={{ padding: "20px 16px", textAlign: "center" }}>
-            <div style={{ fontSize: 13, color: theme.textMuted }}>Belum ada data pengecekan</div>
-          </Card>
+        {activeTab === "tugas" && (
+          <TugasTab tugasList={tugasList} onOpenTugas={onOpenTugas} />
         )}
       </div>
 

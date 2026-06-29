@@ -2,11 +2,18 @@ import Icon from "./Icon";
 import theme from "../styles/theme";
 
 const BottomNav = ({ active, onNav, role }) => {
+  // role teknisi = gabungan transportir (driver) + mekanik (sementara masih 2 string lama,
+  // belum dimigrasi ke "teknisi" tunggal — lihat catatan migrasi role)
+  const isTeknisi = role === "transportir" || role === "mekanik";
+
   const navItems = [
     { id: "dashboard", label: "Beranda", icon: "home" },
-    ...(role === "transportir" ? [{ id: "form", label: "Cek Baru", icon: "plus" }] : []),
+    ...(isTeknisi ? [{ id: "form", label: "Cek Baru", icon: "plus" }] : []),
+    ...(isTeknisi ? [{ id: "dashboard-tugas", label: "Tugas Perbaikan", icon: "wrench" }] : []),
     { id: "history", label: "Riwayat", icon: "history" },
-    { id: "maintenance", label: "Maintenance", icon: "wrench" },
+    // Maintenance HANYA untuk role selain teknisi (misal pertamina), sesuai
+    // instruksi: tombol Maintenance dihilangkan dari nav teknisi.
+    ...(!isTeknisi ? [{ id: "maintenance", label: "Maintenance", icon: "wrench" }] : []),
   ];
 
   return (
@@ -70,6 +77,7 @@ const BottomNav = ({ active, onNav, role }) => {
                 fontSize: 10,
                 marginTop: 4,
                 fontWeight: isActive ? 700 : 400,
+                textAlign: "center",
               }}
             >
               {n.label}

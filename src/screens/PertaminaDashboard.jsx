@@ -191,7 +191,7 @@ const HEALTH_CATEGORY_COLORS = {
   Kritis: "#EF4444",
 };
 
-const PertaminaDashboard = ({ onNav, onLogout, onOpenDetail }) => {
+const PertaminaDashboard = ({ onNav, onLogout, onOpenDetail, onOpenKategori }) => {
   const isDesktop = useBreakpoint();
 
   const [inspeksiList, setInspeksiList] = useState([]);
@@ -205,7 +205,6 @@ const PertaminaDashboard = ({ onNav, onLogout, onOpenDetail }) => {
   });
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("semua");
-  const [healthFilter, setHealthFilter] = useState(null);
   const [assignTarget, setAssignTarget] = useState(null);
 
   const loadData = async () => {
@@ -266,7 +265,6 @@ const PertaminaDashboard = ({ onNav, onLogout, onOpenDetail }) => {
   }, []);
 
   const filteredList = inspeksiList.filter((item) => {
-    if (healthFilter && item.healthCategory !== healthFilter) return false;
     if (filter === "semua") return true;
     if (filter === "abnormal") return item.overallStatus === "Abnormal";
     if (filter === "ditugaskan") return item.status === "ditugaskan";
@@ -298,6 +296,7 @@ const PertaminaDashboard = ({ onNav, onLogout, onOpenDetail }) => {
       return {
         day: d.toLocaleDateString("id-ID", { weekday: "short" }),
         jumlah: count,
+        dateStr, // disimpan untuk navigasi onClick bar chart
       };
     });
 
@@ -403,29 +402,26 @@ const PertaminaDashboard = ({ onNav, onLogout, onOpenDetail }) => {
                         outerRadius={56}
                         paddingAngle={2}
                         onClick={(entry) =>
-                          setHealthFilter((prev) =>
-                            prev === entry.name ? null : entry.name
-                          )
-                        }
+                            onOpenKategori && onOpenKategori("health", entry.name)
+                          }
                         cursor="pointer"
                       >
                         {pieData.map((entry, index) => (
                           <Cell
                             key={index}
                             fill={HEALTH_CATEGORY_COLORS[entry.name]}
-                            opacity={healthFilter && healthFilter !== entry.name ? 0.35 : 1}
                           />
                         ))}
                       </Pie>
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
-                <div style={{ flex: 1 }}>
+                    <div style={{ flex: 1 }}>
                   {pieData.map((d) => (
                     <div
                       key={d.name}
                       onClick={() =>
-                        setHealthFilter((prev) => (prev === d.name ? null : d.name))
+                        onOpenKategori && onOpenKategori("health", d.name)
                       }
                       style={{
                         display: "flex",
@@ -433,7 +429,6 @@ const PertaminaDashboard = ({ onNav, onLogout, onOpenDetail }) => {
                         gap: 8,
                         marginBottom: 8,
                         cursor: "pointer",
-                        opacity: healthFilter && healthFilter !== d.name ? 0.45 : 1,
                       }}
                     >
                       <div
@@ -457,21 +452,6 @@ const PertaminaDashboard = ({ onNav, onLogout, onOpenDetail }) => {
                   ))}
                 </div>
               </div>
-              {healthFilter && (
-                <div
-                  onClick={() => setHealthFilter(null)}
-                  style={{
-                    marginTop: 10,
-                    fontSize: 11,
-                    color: theme.primary,
-                    fontWeight: 600,
-                    cursor: "pointer",
-                    textAlign: "center",
-                  }}
-                >
-                  ✕ Hapus filter "{healthFilter}"
-                </div>
-              )}
             </Card>
           )}
 
@@ -496,7 +476,17 @@ const PertaminaDashboard = ({ onNav, onLogout, onOpenDetail }) => {
                   <Tooltip
                     contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${theme.border}` }}
                   />
-                  <Bar dataKey="jumlah" fill={theme.primary} radius={[6, 6, 0, 0]} />
+                  <Bar
+                    dataKey="jumlah"
+                    fill={theme.primary}
+                    radius={[6, 6, 0, 0]}
+                    cursor="pointer"
+                    onClick={(data) => {
+                      if (data?.dateStr && onOpenKategori) {
+                        onOpenKategori("date", data.dateStr);
+                      }
+                    }}
+                  />
                 </BarChart>
               </ResponsiveContainer>
             </div>

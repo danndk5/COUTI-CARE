@@ -9,7 +9,7 @@ import { supabase } from "../lib/supabase";
 
 // ── Sub-komponen lokal (di luar FormScreen agar tidak re-create saat re-render) ──
 
-const CheckItem = ({ label, status, onStatus, ket, onKet }) => (
+const CheckItem = ({ label, status, onStatus, ket, onKet, errorKet }) => (
   <div
     style={{
       marginBottom: 14,
@@ -24,31 +24,49 @@ const CheckItem = ({ label, status, onStatus, ket, onKet }) => (
     </div>
     <ToggleStatus value={status} onChange={onStatus} />
     {status === "Abnormal" && (
-      <textarea
-        placeholder="Tuliskan keterangan temuan..."
-        value={ket}
-        onChange={(e) => onKet(e.target.value)}
-        style={{
-          marginTop: 10,
-          width: "100%",
-          padding: "10px 12px",
-          borderRadius: 10,
-          border: `1.5px solid ${theme.danger}`,
-          background: theme.dangerLight,
-          color: theme.text,
-          fontSize: 13,
-          fontFamily: "'DM Sans', sans-serif",
-          resize: "none",
-          minHeight: 70,
-          boxSizing: "border-box",
-          outline: "none",
-        }}
-      />
+      <>
+        <textarea
+          placeholder="Tuliskan keterangan temuan..."
+          value={ket}
+          onChange={(e) => onKet(e.target.value)}
+          style={{
+            marginTop: 10,
+            width: "100%",
+            padding: "10px 12px",
+            borderRadius: 10,
+            border: `1.5px solid ${errorKet ? theme.danger : theme.danger}`,
+            background: theme.dangerLight,
+            color: theme.text,
+            fontSize: 13,
+            fontFamily: "'DM Sans', sans-serif",
+            resize: "none",
+            minHeight: 70,
+            boxSizing: "border-box",
+            outline: "none",
+          }}
+        />
+        {/* Pesan error keterangan wajib — tampil di bawah textarea */}
+        {errorKet && (
+          <div
+            style={{
+              marginTop: 5,
+              fontSize: 12,
+              color: theme.danger,
+              fontWeight: 600,
+            }}
+          >
+            ⚠️ Keterangan wajib diisi saat kondisi Abnormal.
+          </div>
+        )}
+      </>
     )}
   </div>
 );
 
-const PhotoUpload = ({ label, kategori, onPhotos }) => {
+// PhotoUpload: onPhotos = setter photos di parent (merged array semua kategori)
+// hasPhoto: boolean dari parent — apakah kategori ini sudah punya foto?
+// errorFoto: boolean — tampilkan pesan error foto belum diupload?
+const PhotoUpload = ({ label, kategori, onPhotos, hasPhoto, errorFoto }) => {
   const [photos, setPhotos] = useState([]);
   const [uploading, setUploading] = useState(false);
 
@@ -99,8 +117,7 @@ const PhotoUpload = ({ label, kategori, onPhotos }) => {
 
     setUploading(false);
 
-    // FIX: kasih tau user kalau ada foto yang gagal upload — sebelumnya
-    // cuma console.error dan dianggap "berhasil" secara diam-diam.
+    // FIX: kasih tau user kalau ada foto yang gagal upload
     if (failedFiles.length > 0) {
       alert(
         `⚠️ ${failedFiles.length} foto gagal diupload:\n${failedFiles.join(
@@ -109,7 +126,7 @@ const PhotoUpload = ({ label, kategori, onPhotos }) => {
       );
     }
 
-    // FIX: reset value supaya user bisa pilih ulang file yang sama (mis. setelah retry)
+    // FIX: reset value supaya user bisa pilih ulang file yang sama
     e.target.value = "";
   };
 
@@ -119,71 +136,90 @@ const PhotoUpload = ({ label, kategori, onPhotos }) => {
     onPhotos((prev) => prev.filter((p) => p.path !== path));
   };
 
-  return (
-    <div
-      style={{
-        border: `2px dashed ${theme.border}`,
-        borderRadius: 12,
-        padding: "18px 16px",
-        textAlign: "center",
-        marginBottom: 16,
-      }}
-    >
-      <Icon name="photo" size={28} color={theme.textMuted} />
-      <div style={{ fontSize: 13, color: theme.textMuted, marginTop: 8 }}>
-        {label}
-      </div>
-      <div style={{ marginTop: 12 }}>
-        <label style={{ display: "inline-block" }}>
-          <input
-            type="file"
-            multiple
-            accept="image/*"
-            onChange={handleFileChange}
-            disabled={uploading}
-            style={{ display: "none" }}
-          />
-          <Btn
-            as="span"
-            onClick={(e) => e.currentTarget.parentElement?.querySelector("input")?.click()}
-            variant="outline"
-            style={{ padding: "9px", fontSize: 13, cursor: "pointer" }}
-          >
-            {uploading ? "Uploading..." : "Pilih Foto"}
-          </Btn>
-        </label>
-      </div>
+  // Border merah kalau ada error foto belum diupload
+  const borderColor = errorFoto ? theme.danger : theme.border;
 
-      {photos.length > 0 && (
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div
+        style={{
+          border: `2px dashed ${borderColor}`,
+          borderRadius: 12,
+          padding: "18px 16px",
+          textAlign: "center",
+          background: errorFoto ? theme.dangerLight : "transparent",
+        }}
+      >
+        <Icon name="photo" size={28} color={errorFoto ? theme.danger : theme.textMuted} />
+        <div style={{ fontSize: 13, color: errorFoto ? theme.danger : theme.textMuted, marginTop: 8 }}>
+          {label}
+        </div>
         <div style={{ marginTop: 12 }}>
-          {photos.map((photo) => (
-            <div
-              key={photo.path}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                padding: "8px 12px",
-                background: theme.primaryLight,
-                borderRadius: 8,
-                marginBottom: 8,
-                fontSize: 12,
-                color: theme.primary,
-              }}
+          <label style={{ display: "inline-block" }}>
+            <input
+              type="file"
+              multiple
+              accept="image/*"
+              onChange={handleFileChange}
+              disabled={uploading}
+              style={{ display: "none" }}
+            />
+            <Btn
+              as="span"
+              onClick={(e) => e.currentTarget.parentElement?.querySelector("input")?.click()}
+              variant="outline"
+              style={{ padding: "9px", fontSize: 13, cursor: "pointer" }}
             >
-              <span>✓ {photo.name}</span>
+              {uploading ? "Uploading..." : "Pilih Foto"}
+            </Btn>
+          </label>
+        </div>
+
+        {photos.length > 0 && (
+          <div style={{ marginTop: 12 }}>
+            {photos.map((photo) => (
               <div
-                onClick={() => handleRemovePhoto(photo.path)}
+                key={photo.path}
                 style={{
-                  cursor: "pointer",
-                  fontWeight: 700,
-                  color: theme.danger,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "8px 12px",
+                  background: theme.primaryLight,
+                  borderRadius: 8,
+                  marginBottom: 8,
+                  fontSize: 12,
+                  color: theme.primary,
                 }}
               >
-                ✕
+                <span>✓ {photo.name}</span>
+                <div
+                  onClick={() => handleRemovePhoto(photo.path)}
+                  style={{
+                    cursor: "pointer",
+                    fontWeight: 700,
+                    color: theme.danger,
+                  }}
+                >
+                  ✕
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Pesan error foto wajib — tampil di bawah kotak upload */}
+      {errorFoto && (
+        <div
+          style={{
+            marginTop: 6,
+            fontSize: 12,
+            color: theme.danger,
+            fontWeight: 600,
+          }}
+        >
+          ⚠️ Foto dokumentasi wajib diupload sebelum melanjutkan.
         </div>
       )}
     </div>
@@ -192,7 +228,8 @@ const PhotoUpload = ({ label, kategori, onPhotos }) => {
 
 // FIX: CamSection dipindah ke luar FormScreen, terima cctv & setCctvField sebagai props
 // supaya tidak di-recreate setiap re-render (yang menyebabkan textarea kehilangan fokus)
-const CamSection = ({ title, cam, cctv, setCctvField }) => (
+// TAMBAHAN: terima errorsKet untuk passing error keterangan per field ke CheckItem
+const CamSection = ({ title, cam, cctv, setCctvField, errorsKet }) => (
   <div style={{ marginBottom: 20 }}>
     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
       <div
@@ -218,6 +255,7 @@ const CamSection = ({ title, cam, cctv, setCctvField }) => (
       onStatus={setCctvField(cam, "segel_bricket")}
       ket={cctv[cam].ket_bricket}
       onKet={setCctvField(cam, "ket_bricket")}
+      errorKet={errorsKet?.[cam]?.ket_bricket || false}
     />
     <CheckItem
       label="Segel Sambungan Kabel"
@@ -225,6 +263,7 @@ const CamSection = ({ title, cam, cctv, setCctvField }) => (
       onStatus={setCctvField(cam, "segel_kabel")}
       ket={cctv[cam].ket_kabel}
       onKet={setCctvField(cam, "ket_kabel")}
+      errorKet={errorsKet?.[cam]?.ket_kabel || false}
     />
   </div>
 );
@@ -237,10 +276,23 @@ const FormScreen = ({ onBack, onNav }) => {
   const [submitting, setSubmitting] = useState(false);
   const [photos, setPhotos] = useState([]);
 
+  // ── State error validasi ──────────────────────────────────────────────────
+  // Satu objek per step untuk menghindari state explosion.
+  // Format gpsErrors: { segel: { ket: bool }, kabel: { ket: bool }, foto: bool }
+  const [gpsErrors, setGpsErrors] = useState({
+    segel: { ket: false },
+    kabel: { ket: false },
+    foto: false,
+  });
+  // Format cctvErrors: { [cam]: { ket_bricket: bool, ket_kabel: bool }, foto: bool }
+  const [cctvErrors, setCctvErrors] = useState({
+    dashcam: { ket_bricket: false, ket_kabel: false },
+    kanan:   { ket_bricket: false, ket_kabel: false },
+    kiri:    { ket_bricket: false, ket_kabel: false },
+    foto: false,
+  });
+
   // FIX (foto orphan): ref untuk tracking apakah laporan sudah berhasil tersimpan.
-  // Dipakai oleh cleanup-on-unmount di bawah — kalau user keluar form (klik "Kembali")
-  // SETELAH upload foto tapi SEBELUM submit berhasil, foto yang nyangkut di storage
-  // otomatis dihapus supaya tidak jadi orphan permanen.
   const photosRef = useRef(photos);
   const submittedRef = useRef(false);
 
@@ -307,7 +359,7 @@ const FormScreen = ({ onBack, onNav }) => {
       const { data: { user } } = await supabase.auth.getUser();
 
       if (user) {
-        const { data: profile, error: profileErr } = await supabase
+        const { data: profile } = await supabase
           .from("profiles")
           .select("nama, perusahaan")
           .eq("id", user.id)
@@ -326,6 +378,65 @@ const FormScreen = ({ onBack, onNav }) => {
     loadUser();
   }, []);
 
+  // ── Helper: cek foto per kategori dari merged photos array ─────────────────
+  // photos = [{ kategori: "gps"|"cctv", url, path, timestamp }, ...]
+  const hasGpsFoto  = photos.some((p) => p.kategori === "gps");
+  const hasCctvFoto = photos.some((p) => p.kategori === "cctv");
+
+  // ── Validasi step 2 (GPS) sebelum lanjut ke step 3 ────────────────────────
+  const validateGps = () => {
+    const newErrors = {
+      segel: { ket: gps.segel.status === "Abnormal" && !gps.segel.ket.trim() },
+      kabel: { ket: gps.kabel.status === "Abnormal" && !gps.kabel.ket.trim() },
+      foto: !hasGpsFoto,
+    };
+    setGpsErrors(newErrors);
+
+    const hasError =
+      newErrors.segel.ket ||
+      newErrors.kabel.ket ||
+      newErrors.foto;
+
+    return !hasError; // true = valid
+  };
+
+  // ── Validasi step 3 (CCTV) sebelum submit ─────────────────────────────────
+  const validateCctv = () => {
+    const kameraList = ["dashcam", "kanan", "kiri"];
+    const newErrors = { foto: !hasCctvFoto };
+
+    kameraList.forEach((cam) => {
+      newErrors[cam] = {
+        ket_bricket:
+          cctv[cam].segel_bricket === "Abnormal" && !cctv[cam].ket_bricket.trim(),
+        ket_kabel:
+          cctv[cam].segel_kabel === "Abnormal" && !cctv[cam].ket_kabel.trim(),
+      };
+    });
+
+    setCctvErrors(newErrors);
+
+    const hasError =
+      newErrors.foto ||
+      kameraList.some(
+        (cam) => newErrors[cam].ket_bricket || newErrors[cam].ket_kabel
+      );
+
+    return !hasError; // true = valid
+  };
+
+  // ── Handler tombol Lanjut (step 2 → 3) ────────────────────────────────────
+  const handleNextFromGps = () => {
+    // Validasi GPS kondisi wajib diisi (sudah ada sebelumnya)
+    if (!gps.segel.status || !gps.kabel.status) {
+      alert("Kondisi GPS (Segel & Kabel) wajib diisi!");
+      return;
+    }
+    // Validasi baru: keterangan Abnormal + foto wajib
+    if (!validateGps()) return;
+    setStep(3);
+  };
+
   const handleSubmit = async () => {
     // Validasi Data Kendaraan
     if (!kendaraan.plat || !kendaraan.armada) {
@@ -334,16 +445,15 @@ const FormScreen = ({ onBack, onNav }) => {
       return;
     }
 
-    // Validasi GPS
+    // Validasi GPS (status wajib diisi — sudah ada sebelumnya)
     if (!gps.segel.status || !gps.kabel.status) {
       alert("Kondisi GPS (Segel & Kabel) wajib diisi!");
       setStep(2);
       return;
     }
 
-    // FIX (validasi CCTV): sebelumnya field CCTV sama sekali tidak divalidasi,
-    // jadi bisa submit dengan 6 field CCTV kosong total.
-    const cctvFields = [
+    // Validasi CCTV status (sudah ada sebelumnya)
+    const cctvStatusFields = [
       cctv.dashcam.segel_bricket,
       cctv.dashcam.segel_kabel,
       cctv.kanan.segel_bricket,
@@ -351,16 +461,28 @@ const FormScreen = ({ onBack, onNav }) => {
       cctv.kiri.segel_bricket,
       cctv.kiri.segel_kabel,
     ];
-    if (cctvFields.some((f) => !f)) {
+    if (cctvStatusFields.some((f) => !f)) {
       alert("Semua kondisi CCTV (Dashcam, Kanan, Kiri) wajib diisi!");
       setStep(3);
       return;
     }
 
+    // Validasi baru: keterangan Abnormal GPS + foto GPS (re-check saat submit)
+    const gpsValid = validateGps();
+    if (!gpsValid) {
+      setStep(2);
+      return;
+    }
+
+    // Validasi baru: keterangan Abnormal CCTV + foto CCTV
+    const cctvValid = validateCctv();
+    if (!cctvValid) {
+      // Tetap di step 3, error sudah ditampilkan inline
+      return;
+    }
+
     setSubmitting(true);
 
-    // FIX (fix finally): semua reset state ada di satu tempat (finally),
-    // jadi gak ada celah lupa setSubmitting(false) kalau nanti try-block ditambah logic baru.
     try {
       const { data: inspeksiData, error: inspeksiError } = await supabase
         .from("inspeksi")
@@ -411,8 +533,6 @@ const FormScreen = ({ onBack, onNav }) => {
           .insert(fotoData);
 
         if (fotoError) {
-          // FIX (upload error notif): sebelumnya cuma console.error lalu tetap
-          // alert "berhasil" — user dikira semua aman padahal foto gagal ke-link.
           console.error("Foto error:", fotoError);
           alert(
             "⚠️ Laporan inspeksi berhasil tersimpan, TAPI foto gagal disimpan ke laporan.\n\n" +
@@ -427,9 +547,7 @@ const FormScreen = ({ onBack, onNav }) => {
       alert("✓ Data berhasil disimpan!");
       onNav("dashboard");
     } catch (error) {
-      // FIX (foto orphan): insert ke tabel "inspeksi" gagal, padahal foto-foto
-      // sudah keburu ke-upload ke storage di step GPS/CCTV. Tanpa cleanup ini,
-      // foto tersebut akan nyangkut permanen tanpa referensi apapun di database.
+      // FIX (foto orphan): insert ke tabel "inspeksi" gagal, cleanup foto
       if (photos.length > 0) {
         const paths = photos.map((p) => p.path).filter(Boolean);
         if (paths.length > 0) {
@@ -630,6 +748,7 @@ const FormScreen = ({ onBack, onNav }) => {
               onStatus={setGpsField("segel", "status")}
               ket={gps.segel.ket}
               onKet={setGpsField("segel", "ket")}
+              errorKet={gpsErrors.segel.ket}
             />
             <CheckItem
               label="Kabel GPS"
@@ -637,6 +756,7 @@ const FormScreen = ({ onBack, onNav }) => {
               onStatus={setGpsField("kabel", "status")}
               ket={gps.kabel.ket}
               onKet={setGpsField("kabel", "ket")}
+              errorKet={gpsErrors.kabel.ket}
             />
             <SectionLabel style={{ marginTop: 8 }}>
               Foto Dokumentasi GPS
@@ -645,6 +765,8 @@ const FormScreen = ({ onBack, onNav }) => {
               label="Foto GPS, Segel & Kabel"
               kategori="gps"
               onPhotos={setPhotos}
+              hasPhoto={hasGpsFoto}
+              errorFoto={gpsErrors.foto}
             />
           </>
         )}
@@ -658,24 +780,29 @@ const FormScreen = ({ onBack, onNav }) => {
               cam="dashcam"
               cctv={cctv}
               setCctvField={setCctvField}
+              errorsKet={cctvErrors}
             />
             <CamSection
               title="Kanan"
               cam="kanan"
               cctv={cctv}
               setCctvField={setCctvField}
+              errorsKet={cctvErrors}
             />
             <CamSection
               title="Kiri"
               cam="kiri"
               cctv={cctv}
               setCctvField={setCctvField}
+              errorsKet={cctvErrors}
             />
             <SectionLabel>Foto Dokumentasi CCTV</SectionLabel>
             <PhotoUpload
               label="Foto semua kamera CCTV"
               kategori="cctv"
               onPhotos={setPhotos}
+              hasPhoto={hasCctvFoto}
+              errorFoto={cctvErrors.foto}
             />
           </>
         )}
@@ -707,9 +834,17 @@ const FormScreen = ({ onBack, onNav }) => {
             ← Kembali
           </Btn>
         )}
-        {step < 3 ? (
+        {step < 2 ? (
           <Btn
             onClick={() => setStep((s) => s + 1)}
+            variant="primary"
+            disabled={submitting}
+          >
+            Lanjut →
+          </Btn>
+        ) : step === 2 ? (
+          <Btn
+            onClick={handleNextFromGps}
             variant="primary"
             disabled={submitting}
           >
