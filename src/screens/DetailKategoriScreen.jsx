@@ -4,6 +4,7 @@
  * Halaman detail yang muncul ketika Pertamina mengklik:
  *  - Segmen pie chart (Baik / Perlu Perhatian / Kritis)  → props: filterType="health", filterValue="Baik"|"Perlu Perhatian"|"Kritis"
  *  - Bar chart tanggal tertentu                          → props: filterType="date",   filterValue="2025-06-01"
+ *  - StatCard Total/Abnormal/Proses/Selesai              → props: filterType="status", filterValue="total"|"abnormal"|"ditugaskan"|"selesai"
  *
  * Tidak mengubah App.jsx secara langsung — lihat catatan di bawah tentang
  * bagian App.jsx yang PERLU ditambahkan.
@@ -84,11 +85,19 @@ const DetailKategoriScreen = ({ filterType, filterValue, onBack, onOpenDetail })
         };
       });
 
-      // Filter tambahan di sisi client untuk kategori health
-      const filtered =
-        filterType === "health"
-          ? withMeta.filter((i) => i.healthCategory === filterValue)
-          : withMeta; // tanggal sudah difilter di query
+      // Filter tambahan di sisi client untuk kategori health & status
+      let filtered = withMeta;
+      if (filterType === "health") {
+        filtered = withMeta.filter((i) => i.healthCategory === filterValue);
+      } else if (filterType === "status") {
+        if (filterValue === "abnormal") {
+          filtered = withMeta.filter((i) => i.overallStatus === "Abnormal");
+        } else if (filterValue === "ditugaskan" || filterValue === "selesai") {
+          filtered = withMeta.filter((i) => i.status === filterValue);
+        }
+        // filterValue === "total" → tidak difilter, tampilkan semua
+      }
+      // filterType === "date" sudah difilter lewat query Supabase di atas
 
       setList(filtered);
       setLoading(false);
@@ -98,6 +107,13 @@ const DetailKategoriScreen = ({ filterType, filterValue, onBack, onOpenDetail })
   }, [filterType, filterValue]);
 
   // ── Judul halaman ──────────────────────────────────────────────────────────
+  const STATUS_TITLES = {
+    total: "📋 Semua Laporan",
+    abnormal: "⚠️ Laporan Abnormal",
+    ditugaskan: "🔧 Sedang Diperbaiki",
+    selesai: "✅ Selesai Diperbaiki",
+  };
+
   const getTitle = () => {
     if (filterType === "health") {
       return `${HEALTH_EMOJI[filterValue] || ""} Armada ${filterValue}`;
@@ -111,6 +127,9 @@ const DetailKategoriScreen = ({ filterType, filterValue, onBack, onOpenDetail })
         year: "numeric",
       });
       return `📅 Inspeksi ${label}`;
+    }
+    if (filterType === "status") {
+      return STATUS_TITLES[filterValue] || "Detail Laporan";
     }
     return "Detail Laporan";
   };
@@ -161,7 +180,7 @@ const DetailKategoriScreen = ({ filterType, filterValue, onBack, onOpenDetail })
               justifyContent: "center",
             }}
           >
-            <Icon name="back" size={18} color={theme.textSub} />
+            <Icon name="arrow" size={18} color={theme.textSub} />
           </div>
           <div>
             <div style={{ fontSize: 17, fontWeight: 800, color: theme.text }}>
@@ -206,6 +225,45 @@ const DetailKategoriScreen = ({ filterType, filterValue, onBack, onOpenDetail })
               }}
             >
               {filterValue}
+            </span>
+          </div>
+        )}
+
+        {/* Indikator warna kategori (hanya untuk filter status) */}
+        {filterType === "status" && filterValue && filterValue !== "total" && (
+          <div
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              marginTop: 8,
+              padding: "4px 12px",
+              borderRadius: 20,
+              background:
+                filterValue === "abnormal"
+                  ? theme.dangerLight
+                  : filterValue === "ditugaskan"
+                  ? "#FEF3C7"
+                  : theme.successLight,
+            }}
+          >
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                color:
+                  filterValue === "abnormal"
+                    ? theme.danger
+                    : filterValue === "ditugaskan"
+                    ? "#F59E0B"
+                    : theme.success,
+              }}
+            >
+              {filterValue === "abnormal"
+                ? "Abnormal"
+                : filterValue === "ditugaskan"
+                ? "Proses"
+                : "Selesai"}
             </span>
           </div>
         )}

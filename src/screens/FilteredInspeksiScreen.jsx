@@ -158,7 +158,7 @@ const FilteredInspeksiScreen = ({ filterType, onBack, onOpenDetail }) => {
               justifyContent: "center",
             }}
           >
-            <Icon name="back" size={18} color={theme.textSub} />
+            <Icon name="arrow" size={18} color={theme.textSub} />
           </div>
           <div>
             <div style={{ fontSize: 17, fontWeight: 800, color: theme.text }}>

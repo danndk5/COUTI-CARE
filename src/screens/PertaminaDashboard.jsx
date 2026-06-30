@@ -169,13 +169,15 @@ const AssignModal = ({ inspeksi, onClose, onAssigned }) => {
   );
 };
 
-const StatCard = ({ value, label, color, bg, isDesktop }) => (
+const StatCard = ({ value, label, color, bg, isDesktop, onClick }) => (
   <div
+    onClick={onClick}
     style={{
       background: bg,
       borderRadius: 16,
       padding: isDesktop ? "22px 16px" : "16px 12px",
       textAlign: "center",
+      cursor: onClick ? "pointer" : "default",
     }}
   >
     <div style={{ fontSize: isDesktop ? 28 : 22, fontWeight: 800, color }}>{value}</div>
@@ -363,10 +365,10 @@ const PertaminaDashboard = ({ onNav, onLogout, onOpenDetail, onOpenKategori }) =
           gap: isDesktop ? DESKTOP_GRID_GAP : 8,
           marginBottom: 20,
         }}>
-          <StatCard value={stats.total} label="Total" color={theme.primary} bg={theme.primaryLight} isDesktop={isDesktop} />
-          <StatCard value={stats.abnormal} label="Abnormal" color={theme.danger} bg={theme.dangerLight} isDesktop={isDesktop} />
-          <StatCard value={stats.ditugaskan} label="Proses" color="#F59E0B" bg="#FEF3C7" isDesktop={isDesktop} />
-          <StatCard value={stats.selesai} label="Selesai" color={theme.success} bg={theme.successLight} isDesktop={isDesktop} />
+          <StatCard value={stats.total} label="Total" color={theme.primary} bg={theme.primaryLight} isDesktop={isDesktop} onClick={() => onOpenKategori && onOpenKategori("status", "total")} />
+          <StatCard value={stats.abnormal} label="Abnormal" color={theme.danger} bg={theme.dangerLight} isDesktop={isDesktop} onClick={() => onOpenKategori && onOpenKategori("status", "abnormal")} />
+          <StatCard value={stats.ditugaskan} label="Proses" color="#F59E0B" bg="#FEF3C7" isDesktop={isDesktop} onClick={() => onOpenKategori && onOpenKategori("status", "ditugaskan")} />
+          <StatCard value={stats.selesai} label="Selesai" color={theme.success} bg={theme.successLight} isDesktop={isDesktop} onClick={() => onOpenKategori && onOpenKategori("status", "selesai")} />
         </div>
 
         {/* Reminder & Top3 — full width di kedua mode */}

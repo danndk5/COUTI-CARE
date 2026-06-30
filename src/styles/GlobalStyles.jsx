@@ -29,6 +29,18 @@ const GlobalStyles = () => (
     input::placeholder {
       color: #CBD5E1;
     }
+
+    /* Hilangkan kotak outline focus (hitam/oranye) yang muncul
+       di sekitar Pie/Bar chart Recharts saat di-klik */
+    .recharts-wrapper:focus,
+    .recharts-wrapper *:focus,
+    .recharts-surface:focus,
+    .recharts-pie-sector:focus,
+    .recharts-sector:focus,
+    .recharts-bar-rectangle:focus,
+    .recharts-rectangle:focus {
+      outline: none !important;
+    }
   `}</style>
 );
 
