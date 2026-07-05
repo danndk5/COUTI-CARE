@@ -69,6 +69,7 @@ const CheckItem = ({ label, status, onStatus, ket, onKet, errorKet }) => (
 const PhotoUpload = ({ label, kategori, onPhotos, hasPhoto, errorFoto }) => {
   const [photos, setPhotos] = useState([]);
   const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef(null);
 
   const handleFileChange = async (e) => {
     const files = Array.from(e.target.files || []);
@@ -155,24 +156,22 @@ const PhotoUpload = ({ label, kategori, onPhotos, hasPhoto, errorFoto }) => {
           {label}
         </div>
         <div style={{ marginTop: 12 }}>
-          <label style={{ display: "inline-block" }}>
-            <input
-              type="file"
-              multiple
-              accept="image/*"
-              onChange={handleFileChange}
-              disabled={uploading}
-              style={{ display: "none" }}
-            />
-            <Btn
-              as="span"
-              onClick={(e) => e.currentTarget.parentElement?.querySelector("input")?.click()}
-              variant="outline"
-              style={{ padding: "9px", fontSize: 13, cursor: "pointer" }}
-            >
-              {uploading ? "Uploading..." : "Pilih Foto"}
-            </Btn>
-          </label>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept="image/*"
+            onChange={handleFileChange}
+            disabled={uploading}
+            style={{ display: "none" }}
+          />
+          <Btn
+            onClick={() => fileInputRef.current?.click()}
+            variant="outline"
+            style={{ padding: "9px", fontSize: 13, cursor: "pointer" }}
+          >
+            {uploading ? "Uploading..." : "Pilih Foto"}
+          </Btn>
         </div>
 
         {photos.length > 0 && (
