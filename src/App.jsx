@@ -147,6 +147,12 @@ const App = () => {
         return;
       }
 
+      
+      if (screenRef.current === "form") {
+        window.history.pushState({ screen: "form" }, "");
+        return;
+      }
+
       // GUARD: back terjadi DAN sebelumnya kita sudah di dashboard (bukan
       // datang dari screen lain) → ini upaya keluar dari halaman utama,
       // bukan navigasi biasa. Tahan, pasang ulang guard, tampilkan konfirmasi.
