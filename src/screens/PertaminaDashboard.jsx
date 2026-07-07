@@ -329,8 +329,7 @@ const PertaminaDashboard = ({ onNav, onLogout, onOpenDetail, onOpenKategori }) =
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
-            <div style={{ fontSize: 13, color: theme.textMuted }}>Selamat datang,</div>
-            <div style={{ fontSize: 19, fontWeight: 800, color: theme.text }}>Pertamina</div>
+            <div style={{ fontSize: 19, fontWeight: 800, color: theme.text }}>Dashboard</div>
             <div
               style={{
                 display: "inline-block",
@@ -343,7 +342,7 @@ const PertaminaDashboard = ({ onNav, onLogout, onOpenDetail, onOpenKategori }) =
                 color: theme.primary,
               }}
             >
-              Pertamina · Monitor & Audit
+              Monitoring 
             </div>
           </div>
           <div
@@ -388,7 +387,7 @@ const PertaminaDashboard = ({ onNav, onLogout, onOpenDetail, onOpenKategori }) =
           {pieData.length > 0 && (
             <Card style={{ marginBottom: 20, padding: 16 }}>
               <SectionLabel style={{ marginBottom: 8 }}>
-                Komposisi Status Kesehatan Armada
+                Status Kesehatan Armada
               </SectionLabel>
               <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
                 <div style={{ width: 120, height: 120, flexShrink: 0 }}>
@@ -457,7 +456,7 @@ const PertaminaDashboard = ({ onNav, onLogout, onOpenDetail, onOpenKategori }) =
 
           {/* Bar Chart */}
           <Card style={{ marginBottom: 20, padding: 16 }}>
-            <SectionLabel style={{ marginBottom: 8 }}>Trend Inspeksi (7 Hari Terakhir)</SectionLabel>
+            <SectionLabel style={{ marginBottom: 8 }}>Inspeksi (7 Hari Terakhir)</SectionLabel>
             <div style={{ height: 140 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={last7Days} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
