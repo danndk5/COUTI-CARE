@@ -29,6 +29,13 @@ const GlobalStyles = () => (
     input::placeholder {
       color: #CBD5E1;
     }
+
+    /* Hilangkan outline/border fokus di chart Recharts saat diklik */
+    .recharts-wrapper,
+    .recharts-wrapper *,
+    .recharts-surface {
+      outline: none !important;
+    }
   `}</style>
 );
 
