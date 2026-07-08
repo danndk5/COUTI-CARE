@@ -7,51 +7,6 @@ import ToggleStatus from "../components/ToggleStatus";
 import theme from "../styles/theme";
 import { supabase } from "../lib/supabase";
 
-// ── Draft persistence (sessionStorage) ────────────────────────────────────────
-// FIX MOBILE UPLOAD: state form biasa (useState) hilang total kalau tab HP
-// di-reload paksa oleh OS (sering terjadi saat file/kamera picker dibuka).
-// Draft disimpan di sessionStorage supaya begitu app hidup lagi, semua isian
-// (termasuk foto yang SUDAH berhasil diupload ke Supabase Storage) bisa
-// otomatis dipulihkan, bukan hilang balik ke halaman awal.
-const DRAFT_KEY = "form-inspeksi-draft";
-
-const saveDraft = (data) => {
-  try {
-    sessionStorage.setItem(DRAFT_KEY, JSON.stringify(data));
-  } catch (e) {
-    console.error("Gagal simpan draft form:", e);
-  }
-};
-
-const loadDraft = () => {
-  try {
-    const raw = sessionStorage.getItem(DRAFT_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch (e) {
-    console.error("Gagal baca draft form:", e);
-    return null;
-  }
-};
-
-export const clearFormDraft = () => {
-  try {
-    sessionStorage.removeItem(DRAFT_KEY);
-  } catch (e) {
-    console.error("Gagal hapus draft form:", e);
-  }
-};
-
-// FIX MOBILE UPLOAD: dipakai App.jsx untuk cek apakah ada draft tersisa,
-// supaya kalau app sampai restart total, user diarahkan otomatis balik ke
-// Form (bukan harus cari menu Form lagi secara manual).
-export const hasFormDraft = () => {
-  try {
-    return !!sessionStorage.getItem(DRAFT_KEY);
-  } catch (e) {
-    return false;
-  }
-};
-
 // ── Sub-komponen lokal (di luar FormScreen agar tidak re-create saat re-render) ──
 
 const CheckItem = ({ label, status, onStatus, ket, onKet, errorKet }) => (
@@ -315,16 +270,10 @@ const CamSection = ({ title, cam, cctv, setCctvField, errorsKet }) => (
 // ── FormScreen ────────────────────────────────────────────────────────────────
 
 const FormScreen = ({ onBack, onNav }) => {
-  // FIX MOBILE UPLOAD: baca draft sekali saat komponen pertama kali mount.
-  // Kalau ada draft tersisa (dari sesi yang ke-reload paksa), state form
-  // langsung dimulai dari situ, bukan dari kosong.
-  const draftRef = useRef(loadDraft());
-  const draft = draftRef.current;
-
-  const [step, setStep] = useState(draft?.step ?? 1);
+  const [step, setStep] = useState(1);
   const [currentUser, setCurrentUser] = useState(null);
   const [submitting, setSubmitting] = useState(false);
-  const [photos, setPhotos] = useState(draft?.photos ?? []);
+  const [photos, setPhotos] = useState([]);
 
   // ── State error validasi ──────────────────────────────────────────────────
   // Satu objek per step untuk menghindari state explosion.
@@ -350,13 +299,6 @@ const FormScreen = ({ onBack, onNav }) => {
     photosRef.current = photos;
   }, [photos]);
 
-  // FIX MOBILE UPLOAD: auto-save draft setiap kali ada perubahan pada isian
-  // form. Ini yang membuat data tidak hilang walau tab HP di-reload paksa
-  // oleh OS saat file/kamera picker terbuka.
-  useEffect(() => {
-    saveDraft({ step, kendaraan, gps, cctv, photos });
-  }, [step, kendaraan, gps, cctv, photos]);
-
   useEffect(() => {
     return () => {
       if (!submittedRef.current && photosRef.current.length > 0) {
@@ -372,47 +314,41 @@ const FormScreen = ({ onBack, onNav }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const [kendaraan, setKendaraan] = useState(
-    draft?.kendaraan ?? {
-      plat: "",
-      armada: "",
-      pemeriksa: "",
-      perusahaan: "",
-    }
-  );
+  const [kendaraan, setKendaraan] = useState({
+    plat: "",
+    armada: "",
+    pemeriksa: "",
+    perusahaan: "",
+  });
   const setK = (k) => (v) => setKendaraan((p) => ({ ...p, [k]: v }));
 
-  const [gps, setGps] = useState(
-    draft?.gps ?? {
-      segel: { status: "", ket: "" },
-      kabel: { status: "", ket: "" },
-    }
-  );
+  const [gps, setGps] = useState({
+    segel: { status: "", ket: "" },
+    kabel: { status: "", ket: "" },
+  });
   const setGpsField = (field, key) => (val) =>
     setGps((p) => ({ ...p, [field]: { ...p[field], [key]: val } }));
 
-  const [cctv, setCctv] = useState(
-    draft?.cctv ?? {
-      dashcam: {
-        segel_bricket: "",
-        segel_kabel: "",
-        ket_bricket: "",
-        ket_kabel: "",
-      },
-      kanan: {
-        segel_bricket: "",
-        segel_kabel: "",
-        ket_bricket: "",
-        ket_kabel: "",
-      },
-      kiri: {
-        segel_bricket: "",
-        segel_kabel: "",
-        ket_bricket: "",
-        ket_kabel: "",
-      },
-    }
-  );
+  const [cctv, setCctv] = useState({
+    dashcam: {
+      segel_bricket: "",
+      segel_kabel: "",
+      ket_bricket: "",
+      ket_kabel: "",
+    },
+    kanan: {
+      segel_bricket: "",
+      segel_kabel: "",
+      ket_bricket: "",
+      ket_kabel: "",
+    },
+    kiri: {
+      segel_bricket: "",
+      segel_kabel: "",
+      ket_bricket: "",
+      ket_kabel: "",
+    },
+  });
   const setCctvField = (cam, field) => (val) =>
     setCctv((p) => ({ ...p, [cam]: { ...p[cam], [field]: val } }));
 
@@ -430,12 +366,10 @@ const FormScreen = ({ onBack, onNav }) => {
 
         setCurrentUser(user.id);
 
-        // FIX MOBILE UPLOAD: kalau field ini sudah terisi (mis. dari draft
-        // yang dipulihkan), jangan ditimpa lagi oleh data profil.
         setKendaraan((p) => ({
           ...p,
-          pemeriksa: p.pemeriksa || profile?.nama || "",
-          perusahaan: p.perusahaan || profile?.perusahaan || "",
+          pemeriksa: profile?.nama || "",
+          perusahaan: profile?.perusahaan || "",
         }));
       }
     };
@@ -599,7 +533,6 @@ const FormScreen = ({ onBack, onNav }) => {
 
         if (fotoError) {
           console.error("Foto error:", fotoError);
-          clearFormDraft();
           alert(
             "⚠️ Laporan inspeksi berhasil tersimpan, TAPI foto gagal disimpan ke laporan.\n\n" +
               "Silakan buka detail laporan ini lalu upload ulang fotonya, atau hubungi admin.\n\n" +
@@ -610,7 +543,6 @@ const FormScreen = ({ onBack, onNav }) => {
         }
       }
 
-      clearFormDraft();
       alert("✓ Data berhasil disimpan!");
       onNav("dashboard");
     } catch (error) {
@@ -653,16 +585,7 @@ const FormScreen = ({ onBack, onNav }) => {
         }}
       >
         <div
-          onClick={() => {
-            // FIX BACK BUTTON (bonus): di step 2/3, tombol ini mundur ke
-            // step sebelumnya dulu, bukan langsung keluar dari form.
-            // Keluar dari form hanya terjadi kalau memang sudah di step 1.
-            if (step > 1) {
-              setStep((s) => s - 1);
-            } else {
-              onBack();
-            }
-          }}
+          onClick={onBack}
           style={{
             display: "flex",
             alignItems: "center",
