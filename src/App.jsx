@@ -5,7 +5,7 @@ import RegisterScreen     from "./screens/RegisterScreen";
 import DashboardScreen    from "./screens/DashboardScreen";
 import PertaminaDashboard from "./screens/PertaminaDashboard";
 import MekanikDashboard   from "./screens/MekanikDashboard";
-import FormScreen         from "./screens/FormScreen";
+import FormScreen, { hasFormDraft, clearFormDraft } from "./screens/FormScreen";
 import RiwayatScreen      from "./screens/RiwayatScreen";
 import MaintenanceScreen  from "./screens/MaintenanceScreen";
 import DetailScreen       from "./screens/DetailScreen";
@@ -58,7 +58,15 @@ const App = () => {
     }
 
     setRole(profile.role);
-    enterDashboard();
+
+    // FIX MOBILE UPLOAD: kalau masih ada draft form yang belum sempat
+    // ke-submit (mis. karena app sempat restart), langsung arahkan user
+    // ke Form lagi supaya isian yang tadi tidak terasa "hilang".
+    if (hasFormDraft()) {
+      enterForm();
+    } else {
+      enterDashboard();
+    }
   };
 
   // FIX BACK BUTTON: helper masuk ke "dashboard" sekaligus pasang history
@@ -75,6 +83,17 @@ const App = () => {
   const enterLogin = () => {
     window.history.replaceState({ screen: "login" }, "");
     setScreen("login");
+  };
+
+  // FIX MOBILE UPLOAD: helper masuk langsung ke "form" (dipakai saat app
+  // restart total tapi masih ada draft form tersisa di sessionStorage).
+  // History stack dibuat sama seperti alur normal dashboard -> form, supaya
+  // tombol kembali tetap berperilaku konsisten dengan guard yang sudah ada.
+  const enterForm = () => {
+    window.history.replaceState({ screen: "dashboard" }, "");
+    window.history.pushState({ screen: "dashboard", guard: true }, "");
+    window.history.pushState({ screen: "form" }, "");
+    setScreen("form");
   };
 
   useEffect(() => {
@@ -122,6 +141,15 @@ const App = () => {
       // SIGNED_IN: skip kalau ini hasil dari token recovery (user belum reset password)
       if (event === "SIGNED_IN" && session) {
         if (screenRef.current === "reset-password") return;
+        // FIX MOBILE UPLOAD (root cause): jangan navigasi ulang kalau user
+        // sudah ada di dalam app. Tanpa ini, saat Android kembali dari file
+        // picker (foto/kamera), Supabase kadang menembak ulang event
+        // SIGNED_IN (session refresh), yang otomatis melempar user ke
+        // dashboard lewat fetchRoleAndNavigate() -> enterDashboard() -- ini
+        // yang bikin form & isiannya hilang di HP, plus bikin guard back
+        // button di form jadi percuma karena screen sudah keburu berubah.
+        const alreadyInApp = !["login", "register"].includes(screenRef.current);
+        if (alreadyInApp) return;
         await fetchRoleAndNavigate(session.user.id);
       }
     });
@@ -190,10 +218,17 @@ const App = () => {
 
   const handleLogin = (r) => {
     setRole(r);
-    enterDashboard();
+    if (hasFormDraft()) {
+      enterForm();
+    } else {
+      enterDashboard();
+    }
   };
 
   const handleLogout = async () => {
+    // FIX MOBILE UPLOAD: draft form bersifat per-user, jadi dibersihkan saat
+    // logout supaya tidak "bocor" ke user lain yang login di tab/HP yang sama.
+    clearFormDraft();
     await supabase.auth.signOut();
   };
 
