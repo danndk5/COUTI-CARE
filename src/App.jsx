@@ -200,11 +200,11 @@ const App = () => {
       setScreen("dashboard");
       setInitialTab("tugas");
     } else if (s === "dashboard") {
-      window.history.pushState({ screen: s }, "");
+      enterDashboard();
     } else {
       setInitialTab("beranda");
-      window.history.pushState({ screen: "dashboard", guard: true }, "");    
-      setScreen("dashboard");
+      window.history.pushState({ screen: s }, "");    
+      setScreen(s);
     }
   };
 
