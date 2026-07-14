@@ -199,8 +199,11 @@ const App = () => {
     if (s === "dashboard-tugas") {
       setScreen("dashboard");
       setInitialTab("tugas");
+    } else if (s === "dashboard") {
+      enterDashboard();
     } else {
       setInitialTab("beranda");
+      window.history.pushState({ screen: s }, "");    
       setScreen(s);
     }
   };
