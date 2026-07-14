@@ -320,6 +320,26 @@ const FormScreen = ({ onBack, onNav }) => {
   const submittedRef = useRef(false);
   useEffect(() => { photosRef.current = photos; }, [photos]);
 
+  useEffect(() => {
+    if (step === 1) {
+      window.history.replaceState({ screen: "form", step: 1 }, "");
+    } else {
+      window.history.pushState({ screen: "form", step }, "");
+    }
+  }, [step]);
+
+  useEffect(() => {
+    const handlePopState = (e) => {
+      const state = e.state;
+      if (state?.screen === "form" && state?.step && state.step < step) {
+        setStep(state.step);
+     }
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [step]);
+
+
   // Cleanup foto orphan saat unmount
   useEffect(() => {
     return () => {
@@ -502,7 +522,7 @@ const FormScreen = ({ onBack, onNav }) => {
     <div style={{ minHeight: "100vh", background: theme.bg, display: "flex", flexDirection: "column" }}>
       {/* Header */}
       <div style={{ background: theme.surface, padding: "48px 16px 16px", borderBottom: `1px solid ${theme.border}`, boxShadow: theme.shadow }}>
-        <div onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, cursor: "pointer", color: theme.textSub, fontSize: 13 }}>
+        <div onClick={() => { if (step > 1) { window.history.back(); } else { onBack(); } }} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, cursor: "pointer", color: theme.textSub, fontSize: 13 }}>
           <Icon name="arrow" size={16} color={theme.textSub} /> Kembali
         </div>
         <div style={{ fontWeight: 800, fontSize: 18, color: theme.text, marginBottom: 16 }}>Form Pengecekan</div>
@@ -664,7 +684,7 @@ const FormScreen = ({ onBack, onNav }) => {
         background: theme.surface, borderTop: `1px solid ${theme.border}`, display: "flex", gap: 10,
       }}>
         {step > 1 && (
-          <Btn onClick={() => setStep((s) => s - 1)} variant="ghost" style={{ flex: 0.5, padding: "12px", fontSize: 13 }} disabled={submitting}>
+          <Btn onClick={() => window.history.back()} variant="ghost" style={{ flex: 0.5, padding: "12px", fontSize: 13 }} disabled={submitting}>
             ← Kembali
           </Btn>
         )}
