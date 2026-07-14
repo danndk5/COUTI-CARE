@@ -122,6 +122,7 @@ const App = () => {
       // SIGNED_IN: skip kalau ini hasil dari token recovery (user belum reset password)
       if (event === "SIGNED_IN" && session) {
         if (screenRef.current === "reset-password") return;
+        if (screenRef.current === "dashboard") return;
         await fetchRoleAndNavigate(session.user.id);
       }
     });
@@ -190,6 +191,7 @@ const App = () => {
 
   const handleLogin = (r) => {
     setRole(r);
+    enterDashboard();
   };
 
   const handleLogout = async () => {
