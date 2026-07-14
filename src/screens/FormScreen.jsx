@@ -297,6 +297,8 @@ const CamSection = ({ title, cam, cctv, setCctvField, errorsKet }) => (
 const FormScreen = ({ onBack, onNav }) => {
   const [step,       setStep]       = useState(1);
   const [currentUser,setCurrentUser]= useState(null);
+  const stepRef = useRef(1); // ref untuk step — dibaca di capture listener (hindari stale closure)
+  useEffect(() => { stepRef.current = step; }, [step]);
   const [submitting, setSubmitting] = useState(false);
   const [photos,     setPhotos]     = useState([]);
 
@@ -581,9 +583,9 @@ const FormScreen = ({ onBack, onNav }) => {
                 </div>
               )}
 
-              {/* Transportir — readonly jika auto-fill */}
+              {/* Perusahaan Transportir — readonly jika auto-fill */}
               <Input
-                label="Transportir"
+                label="Perusahaan Transportir"
                 placeholder={isAutoFilled ? "" : "PT. ..."}
                 value={kendaraan.perusahaan}
                 onChange={isAutoFilled ? undefined : setK("perusahaan")}
