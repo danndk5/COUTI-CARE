@@ -10,6 +10,10 @@ import RiwayatScreen      from "./screens/RiwayatScreen";
 import MaintenanceScreen  from "./screens/MaintenanceScreen";
 import DetailScreen       from "./screens/DetailScreen";
 import TugasDetailScreen  from "./screens/TugasDetailScreen";
+import DetailKategoriScreen    from "./screens/DetailKategoriScreen";
+import FilteredInspeksiScreen  from "./screens/FilteredInspeksiScreen";
+import ForgotPasswordScreen from "./screens/ForgotPasswordScreen";
+import ResetPasswordScreen from "./screens/ResetPasswordScreen";
 import { supabase } from "./lib/supabase";
 import RiwayatKerusakanScreen from "./screens/RiwayatKerusakanScreen";
 import { useBreakpoint } from "./hooks/useBreakpoint";
@@ -22,6 +26,10 @@ const App = () => {
   const [loading, setLoading] = useState(true);
   const [selectedInspeksiId, setSelectedInspeksiId] = useState(null);
   const [selectedTugasId, setSelectedTugasId] = useState(null);
+  const [detailKategoriType,  setDetailKategoriType]  = useState(null); // "health" | "date"
+  const [detailKategoriValue, setDetailKategoriValue] = useState(null); // "Baik" / "2025-06-01" / dll
+  const [filteredInspFilter,  setFilteredInspFilter]  = useState(null); // "all" | "normal" | "abnormal"
+  const [initialTab, setInitialTab] = useState("beranda");
   const [showExitConfirm, setShowExitConfirm] = useState(false); // FIX EXIT CONFIRM
   const isDesktop = useBreakpoint();
 
@@ -71,6 +79,21 @@ const App = () => {
 
   useEffect(() => {
     const checkSession = async () => {
+      // Deteksi token recovery dari link email Supabase
+      // Format URL: /?screen=reset-password#access_token=...&type=recovery
+      const urlParams = new URLSearchParams(window.location.search);
+      const hashParams = new URLSearchParams(window.location.hash.replace("#", "?").slice(1));
+      const isRecovery =
+        urlParams.get("screen") === "reset-password" ||
+        hashParams.get("type") === "recovery";
+
+      if (isRecovery) {
+        window.history.replaceState({ screen: "reset-password" }, "");
+        setScreen("reset-password");
+        setLoading(false);
+        return;
+      }
+
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
         await fetchRoleAndNavigate(session.user.id);
@@ -89,7 +112,18 @@ const App = () => {
         setSelectedInspeksiId(null);
         setSelectedTugasId(null);
       }
+      // PASSWORD_RECOVERY: arahkan ke ResetPasswordScreen, jangan ke dashboard
+      if (event === "PASSWORD_RECOVERY") {
+        window.history.replaceState({ screen: "reset-password" }, "");
+        setScreen("reset-password");
+        setLoading(false);
+        return;
+      }
+      // SIGNED_IN: skip kalau ini hasil dari token recovery (user belum reset password)
       if (event === "SIGNED_IN" && session) {
+        if (screenRef.current === "reset-password") return;
+        const alreadyInApp = !["login", "register"].includes(screenRef.current);
+        if (alreadyInApp) return;
         await fetchRoleAndNavigate(session.user.id);
       }
     });
@@ -109,11 +143,13 @@ const App = () => {
       // Begitu pop pertama mendarat balik di "dashboard" (entry dasar, bukan
       // guard), mundur sekali lagi supaya benar-benar keluar dari app.
       if (allowExitRef.current) {
-        if (incomingScreen === "dashboard") {
+        if (incomingScreen === "dashboard" && screenRef.current === "dashboard") {
           window.history.back();
         }
         return;
       }
+
+      
 
       // GUARD: back terjadi DAN sebelumnya kita sudah di dashboard (bukan
       // datang dari screen lain) → ini upaya keluar dari halaman utama,
@@ -128,6 +164,9 @@ const App = () => {
       setScreen(incomingScreen);
       if (state && "selectedInspeksiId" in state) setSelectedInspeksiId(state.selectedInspeksiId ?? null);
       if (state && "selectedTugasId" in state) setSelectedTugasId(state.selectedTugasId ?? null);
+      if (state && "detailKategoriType"  in state) setDetailKategoriType(state.detailKategoriType ?? null);
+      if (state && "detailKategoriValue" in state) setDetailKategoriValue(state.detailKategoriValue ?? null);
+      if (state && "filteredInspFilter"  in state) setFilteredInspFilter(state.filteredInspFilter ?? null);
     };
 
     window.addEventListener("popstate", handlePopState);
@@ -157,8 +196,16 @@ const App = () => {
   };
 
   const nav = (s) => {
-    window.history.pushState({ screen: s }, "");
-    setScreen(s);
+    if (s === "dashboard-tugas") {
+      setScreen("dashboard");
+      setInitialTab("tugas");
+    } else if (s === "dashboard") {
+      window.history.pushState({ screen: s }, "");
+    } else {
+      setInitialTab("beranda");
+      window.history.pushState({ screen: "dashboard", guard: true }, "");    
+      setScreen("dashboard");
+    }
   };
 
   const openDetail = (id) => {
@@ -173,6 +220,27 @@ const App = () => {
     setScreen("tugas-detail");
   };
 
+  // Task A — buka halaman detail kategori dari pie/bar chart (Pertamina)
+  const openKategori = (filterType, filterValue) => {
+    setDetailKategoriType(filterType);
+    setDetailKategoriValue(filterValue);
+    window.history.pushState(
+      { screen: "detail-kategori", detailKategoriType: filterType, detailKategoriValue: filterValue },
+      ""
+    );
+    setScreen("detail-kategori");
+  };
+
+  // Task B — buka halaman list inspeksi terfilter dari StatCard (Teknisi)
+  const openFilteredInspeksi = (filterType) => {
+    setFilteredInspFilter(filterType);
+    window.history.pushState(
+      { screen: "filtered-inspeksi", filteredInspFilter: filterType },
+      ""
+    );
+    setScreen("filtered-inspeksi");
+  };
+
   const renderDashboard = () => {
     if (role === "pertamina") {
       return (
@@ -180,15 +248,7 @@ const App = () => {
           onNav={nav}
           onLogout={handleLogout}
           onOpenDetail={openDetail}
-        />
-      );
-    }
-    if (role === "mekanik") {
-      return (
-        <MekanikDashboard
-          onNav={nav}
-          onLogout={handleLogout}
-          onOpenTugas={openTugas}
+          onOpenKategori={openKategori}
         />
       );
     }
@@ -198,9 +258,13 @@ const App = () => {
         onNav={nav}
         onLogout={handleLogout}
         onOpenDetail={openDetail}
+        onOpenTugas={openTugas}
+        initialTab={initialTab}
+        onOpenKategori={openFilteredInspeksi}
       />
     );
-  };
+  }
+  
 
   const containerStyle = {
     fontFamily: "'DM Sans', sans-serif",
@@ -226,14 +290,14 @@ const App = () => {
     );
   }
 
-  const knownScreens = ["login", "register", "dashboard", "form", "history", "maintenance", "detail", "tugas-detail", "riwayat-kerusakan", "404"];
+  const knownScreens = ["login", "register", "dashboard", "form", "history", "maintenance", "detail", "tugas-detail", "riwayat-kerusakan", "detail-kategori", "filtered-inspeksi", "404", "forgot-password", "reset-password"];
   const safeScreen = knownScreens.includes(screen) ? screen : "login";
 
   return (
     <div style={containerStyle}>
       <GlobalStyles />
       <div style={innerStyle}>
-        {safeScreen === "login"        && <LoginScreen    onLogin={handleLogin} onGoRegister={() => nav("register")} />}
+        {safeScreen === "login"        && <LoginScreen    onLogin={handleLogin} onGoRegister={() => nav("register")} onForgotPassword={() => setScreen("forgot-password")} />}
         {safeScreen === "register"     && <RegisterScreen onBack={() => window.history.back()} />}
         {safeScreen === "dashboard"    && renderDashboard()}
         {safeScreen === "form"         && <FormScreen onBack={() => window.history.back()} onNav={nav} />}
@@ -242,6 +306,27 @@ const App = () => {
         {safeScreen === "detail"       && <DetailScreen inspeksiId={selectedInspeksiId} onBack={() => window.history.back()} />}
         {safeScreen === "tugas-detail" && <TugasDetailScreen tugasId={selectedTugasId} onBack={() => window.history.back()} />}
         {safeScreen === "riwayat-kerusakan" && <RiwayatKerusakanScreen onBack={() => window.history.back()} />}
+        {safeScreen === "detail-kategori" && (
+          <DetailKategoriScreen
+            filterType={detailKategoriType}
+            filterValue={detailKategoriValue}
+            onBack={() => window.history.back()}
+            onOpenDetail={openDetail}
+          />
+        )}
+        {safeScreen === "filtered-inspeksi" && (
+          <FilteredInspeksiScreen
+            filterType={filteredInspFilter}
+            onBack={() => window.history.back()}
+            onOpenDetail={openDetail}
+          />
+        )}
+        {safeScreen === "forgot-password" && (
+          <ForgotPasswordScreen navigate={setScreen} />
+        )}
+        {safeScreen === "reset-password" && (
+          <ResetPasswordScreen navigate={setScreen} />
+        )}
       </div>
 
       {/* FIX EXIT CONFIRM: dialog konfirmasi keluar dari halaman utama */}
