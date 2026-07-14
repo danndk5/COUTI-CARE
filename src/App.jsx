@@ -122,7 +122,8 @@ const App = () => {
       // SIGNED_IN: skip kalau ini hasil dari token recovery (user belum reset password)
       if (event === "SIGNED_IN" && session) {
         if (screenRef.current === "reset-password") return;
-        if (screenRef.current === "dashboard") return;
+        const alreadyInApp = !["login", "register"].includes(screenRef.current);
+        if (alreadyInApp) return;
         await fetchRoleAndNavigate(session.user.id);
       }
     });
@@ -142,17 +143,13 @@ const App = () => {
       // Begitu pop pertama mendarat balik di "dashboard" (entry dasar, bukan
       // guard), mundur sekali lagi supaya benar-benar keluar dari app.
       if (allowExitRef.current) {
-        if (incomingScreen === "dashboard") {
+        if (incomingScreen === "dashboard" && screenRef.current === "dashboard") {
           window.history.back();
         }
         return;
       }
 
       
-      if (screenRef.current === "form") {
-        window.history.pushState({ screen: "form" }, "");
-        return;
-      }
 
       // GUARD: back terjadi DAN sebelumnya kita sudah di dashboard (bukan
       // datang dari screen lain) → ini upaya keluar dari halaman utama,
@@ -200,11 +197,9 @@ const App = () => {
 
   const nav = (s) => {
     if (s === "dashboard-tugas") {
-      window.history.pushState({ screen: "dashboard" }, "");
       setScreen("dashboard");
       setInitialTab("tugas");
     } else {
-      window.history.pushState({ screen: s }, "");
       setInitialTab("beranda");
       setScreen(s);
     }
