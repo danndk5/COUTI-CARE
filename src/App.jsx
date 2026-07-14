@@ -201,9 +201,11 @@ const App = () => {
 
   const nav = (s) => {
     if (s === "dashboard-tugas") {
+      window.history.pushState({ screen: "dashboard" }, "");
       setScreen("dashboard");
       setInitialTab("tugas");
     } else {
+      window.history.pushState({ screen: s }, "");
       setInitialTab("beranda");
       setScreen(s);
     }
