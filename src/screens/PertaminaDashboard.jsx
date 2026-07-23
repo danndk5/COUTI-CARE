@@ -151,7 +151,7 @@ const PertaminaDashboard = ({ onNav, onLogout, onOpenDetail, onOpenKategori }) =
         <div style={{ display: "grid", gridTemplateColumns: isDesktop ? "1fr 1fr" : "1fr", gap: isDesktop ? DESKTOP_GRID_GAP : 0, alignItems: "start" }}>
           {pieData.length > 0 && (
             <Card style={{ marginBottom: 20, padding: 16 }}>
-              <SectionLabel style={{ marginBottom: 8 }}>Komposisi Status Kesehatan Armada</SectionLabel>
+              <SectionLabel style={{ marginBottom: 8 }}>Status Kesehatan Armada</SectionLabel>
               <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
                 <div style={{ width: 120, height: 120, flexShrink: 0 }}>
                   <ResponsiveContainer width="100%" height="100%">

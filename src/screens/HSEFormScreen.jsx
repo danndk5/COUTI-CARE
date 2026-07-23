@@ -5,11 +5,25 @@ import Input from "../components/Input";
 import SectionLabel from "../components/SectionLabel";
 import theme from "../styles/theme";
 import { supabase } from "../lib/supabase";
-import sop1 from "../assets/acuan/sop1.png";
-import sop2 from "../assets/acuan/sop2.png";
-import sop3 from "../assets/acuan/sop3.png";
+import sop1 from "../assets/acuan/01.png";
+import sop2 from "../assets/acuan/02.png";
+import sop3 from "../assets/acuan/03.png";
+import sop4 from "../assets/acuan/04.png";
+import sop5 from "../assets/acuan/05.png";
+import sop6 from "../assets/acuan/06.png";
+import sop7 from "../assets/acuan/07.png";
+import sop8 from "../assets/acuan/08.png";
+import sop9 from "../assets/acuan/09.png";
+import sop10 from "../assets/acuan/10.png";
+import sop11 from "../assets/acuan/11.png";
+import sop12 from "../assets/acuan/12.png";
+import sop13 from "../assets/acuan/13.png";
+import sop14 from "../assets/acuan/14.png";
+import sop15 from "../assets/acuan/15.png";
+import sop16 from "../assets/acuan/16.png";
 
-const SOP_IMAGES = [sop1, sop2, sop3];
+
+const SOP_IMAGES = [sop1, sop2, sop3, sop4, sop5, sop6, sop7, sop8, sop9, sop10, sop11, sop12, sop13, sop14, sop15, sop16];
 
 // ── Helpers timestamp & GPS ───────────────────────────────────────────────────
 const decimalToDMS = (decimal, posDir, negDir) => {
@@ -178,7 +192,7 @@ const CameraCapture = ({ label, kategori, onPhotos, allPhotos, errorFoto }) => {
 const HSEFormScreen = ({ onBack, onNav }) => {
   // step: "sop" | "kendaraan" | "kategori" | "kompartemen"
   const [step,        setStep]        = useState("sop");
-  const [sopPage,     setSopPage]     = useState(0); // 0,1,2
+  const [sopPage,     setSopPage]     = useState(0);
   const [currentUser, setCurrentUser] = useState(null);
   const [submitting,  setSubmitting]  = useState(false);
   const [photos,      setPhotos]      = useState([]);
@@ -275,7 +289,11 @@ const HSEFormScreen = ({ onBack, onNav }) => {
 
   // ── Navigasi antar step ───────────────────────────────────────────────────
   const handleLanjutSOP = () => {
-    if (sopPage < 2) { setSopPage((p) => p + 1); return; }
+    if (sopPage < SOP_IMAGES.length - 1) { setSopPage((p) => p + 1); return; }
+    setStep("kendaraan");
+  };
+
+  const handleSkipSOP = () => {
     setStep("kendaraan");
   };
 
@@ -405,15 +423,24 @@ const HSEFormScreen = ({ onBack, onNav }) => {
         </div>
 
         {/* Navigasi SOP */}
-        <div style={{ background: theme.surface, padding: "16px", borderTop: `1px solid ${theme.border}`, display: "flex", gap: 10 }}>
-          {sopPage > 0 && (
-            <Btn onClick={() => setSopPage((p) => p - 1)} variant="ghost" style={{ flex: 0.5 }}>
-              ← Sebelumnya
+        <div style={{ background: theme.surface, padding: "16px", borderTop: `1px solid ${theme.border}` }}>
+          {/* Tombol Skip — hanya muncul sebelum halaman terakhir */}
+
+          <div style={{ display: "flex", gap: 10 }}>
+            {sopPage > 0 && (
+              <Btn onClick={() => setSopPage((p) => p - 1)} variant="ghost" style={{ flex: 1 }}>
+                ← Sebelumnya
+              </Btn>
+            )}
+            <Btn onClick={handleLanjutSOP} variant="primary" style={{ flex: 2 }}>
+              {sopPage < SOP_IMAGES.length - 1 ? "Halaman Berikutnya →" : "✅ Lanjutkan Pengecekan"}
             </Btn>
-          )}
-          <Btn onClick={handleLanjutSOP} variant="primary">
-            {sopPage < 2 ? "Halaman Berikutnya →" : "✅ Lanjutkan Pengecekan"}
-          </Btn>
+            {sopPage < SOP_IMAGES.length - 1 && (
+              <Btn onClick={handleSkipSOP} variant="ghost" style={{ flex: 1 }}>
+                Lewati SOP ⏭
+              </Btn>
+            )}
+          </div>
         </div>
       </div>
     );
