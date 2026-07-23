@@ -6,13 +6,31 @@ import Icon from "../components/Icon";
 import theme from "../styles/theme";
 import { supabase } from "../lib/supabase";
 
-// Hanya 2 pilihan role. Value "transportir" dipakai sebagai role gabungan
-// "Teknisi" (driver + mekanik lama), supaya tetap kompatibel dengan semua
-// pengecekan role === "transportir" yang sudah ada di banyak file lain
-// (BottomNav, App.jsx renderDashboard, dll) tanpa perlu migrasi data.
 const ROLES = [
-  { value: "transportir", label: "Teknisi", icon: "wrench", desc: "Periksa, inspeksi, dan perbaiki kendaraan" },
-  { value: "pertamina", label: "Pertamina / Depot", icon: "eye", desc: "Monitor & tugaskan perbaikan" },
+  {
+    value: "depot",
+    label: "Depot / Pertamina",
+    icon: "eye",
+    desc: "Monitor dashboard GPS, CCTV, Uji Kedap & Cek Random",
+  },
+  {
+    value: "teknisi",
+    label: "Teknisi",
+    icon: "wrench",
+    desc: "Pengecekan & tindak lanjut GPS dan CCTV kendaraan",
+  },
+  {
+    value: "hse",
+    label: "HSE",
+    icon: "shield",
+    desc: "Pengecekan Uji Kedap Suara kendaraan MT",
+  },
+  {
+    value: "p1",
+    label: "P1 (Random Cek)",
+    icon: "search",
+    desc: "Pengecekan & temuan acak kendaraan MT",
+  },
 ];
 
 const RegisterScreen = ({ onBack }) => {
@@ -22,6 +40,7 @@ const RegisterScreen = ({ onBack }) => {
     perusahaan: "",
     email: "",
     pass: "",
+    kode: "",
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -30,8 +49,8 @@ const RegisterScreen = ({ onBack }) => {
   const set = (k) => (v) => setForm((p) => ({ ...p, [k]: v }));
 
   const handleRegister = async () => {
-    if (!form.nama || !form.perusahaan || !form.email || !form.pass) {
-      setError("Semua field wajib diisi.");
+    if (!form.nama || !form.perusahaan || !form.email || !form.pass || !form.kode) {
+      setError("Semua field wajib diisi termasuk kode karyawan.");
       return;
     }
     if (form.pass.length < 8) {
@@ -43,6 +62,31 @@ const RegisterScreen = ({ onBack }) => {
     setError("");
 
     try {
+      // STEP 1: Validasi kode dulu sebelum buat akun
+      // Cek apakah kode ada dan belum dipakai, dan cocok dengan role yang dipilih
+      const { data: kodeData, error: kodeError } = await supabase
+        .from("kode_registrasi")
+        .select("id, role, used")
+        .eq("kode", form.kode.trim().toUpperCase())
+        .single();
+
+      if (kodeError || !kodeData) {
+        setError("Kode karyawan tidak ditemukan.");
+        setLoading(false);
+        return;
+      }
+      if (kodeData.used) {
+        setError("Kode karyawan sudah digunakan.");
+        setLoading(false);
+        return;
+      }
+      if (kodeData.role !== selectedRole) {
+        setError(`Kode ini hanya untuk role "${kodeData.role}", bukan "${selectedRole}".`);
+        setLoading(false);
+        return;
+      }
+
+      // STEP 2: Buat akun Supabase Auth
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: form.email,
         password: form.pass,
@@ -54,9 +98,28 @@ const RegisterScreen = ({ onBack }) => {
         return;
       }
 
+      const userId = authData.user.id;
+
+      // STEP 3: Claim kode (atomic via RPC — tandai used=true + simpan used_by)
+      const { data: claimResult, error: claimError } = await supabase
+        .rpc("claim_kode_registrasi", {
+          p_kode: form.kode.trim().toUpperCase(),
+          p_user_id: userId,
+        });
+
+      if (claimError || !claimResult?.ok) {
+        // Kode race-condition (dipakai orang lain di saat bersamaan)
+        setError(claimResult?.error || "Kode gagal diklaim, coba lagi.");
+        // Hapus akun auth yang baru dibuat supaya tidak jadi akun tanpa profil
+        await supabase.auth.admin?.deleteUser?.(userId);
+        setLoading(false);
+        return;
+      }
+
+      // STEP 4: Simpan profil
       const { error: profileError } = await supabase.from("profiles").insert([
         {
-          id: authData.user.id,
+          id: userId,
           nama: form.nama,
           perusahaan: form.perusahaan,
           role: selectedRole,
@@ -74,24 +137,17 @@ const RegisterScreen = ({ onBack }) => {
 
       setTimeout(() => {
         onBack();
-      }, 2000);
+      }, 2500);
     } catch (err) {
       setError(err.message);
       setLoading(false);
     }
   };
 
-  // ── STEP 1: Pilih Role ──────────────────────────────────────────────────
+  // ── STEP 1: Pilih Role ──────────────────────────────────────────────
   if (!selectedRole) {
     return (
-      <div
-        style={{
-          minHeight: "100vh",
-          background: theme.bg,
-          padding: 24,
-          paddingTop: 56,
-        }}
-      >
+      <div style={{ minHeight: "100vh", background: theme.bg, padding: 24, paddingTop: 56 }}>
         <div
           onClick={onBack}
           style={{
@@ -142,12 +198,8 @@ const RegisterScreen = ({ onBack }) => {
               <Icon name={r.icon} size={22} color={theme.primary} />
             </div>
             <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 700, fontSize: 15, color: theme.text }}>
-                {r.label}
-              </div>
-              <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>
-                {r.desc}
-              </div>
+              <div style={{ fontWeight: 700, fontSize: 15, color: theme.text }}>{r.label}</div>
+              <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>{r.desc}</div>
             </div>
             <Icon name="chevron" size={16} color={theme.textMuted} />
           </Card>
@@ -156,18 +208,11 @@ const RegisterScreen = ({ onBack }) => {
     );
   }
 
-  // ── STEP 2: Form Daftar ────────────────────────────────────────────────
+  // ── STEP 2: Form Daftar ────────────────────────────────────────────
   const roleInfo = ROLES.find((r) => r.value === selectedRole);
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background: theme.bg,
-        padding: 24,
-        paddingTop: 56,
-      }}
-    >
+    <div style={{ minHeight: "100vh", background: theme.bg, padding: 24, paddingTop: 56 }}>
       <div
         onClick={() => setSelectedRole(null)}
         style={{
@@ -207,11 +252,12 @@ const RegisterScreen = ({ onBack }) => {
       <Card>
         {success ? (
           <div style={{ textAlign: "center", padding: 16 }}>
-            <div style={{ fontSize: 14, color: "#10B981", marginBottom: 12 }}>
-              ✓ Akun berhasil dibuat!
+            <div style={{ fontSize: 32, marginBottom: 12 }}>✅</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "#10B981", marginBottom: 8 }}>
+              Akun berhasil dibuat!
             </div>
             <div style={{ fontSize: 12, color: theme.textMuted }}>
-              Mengalihkan ke login...
+              Mengalihkan ke halaman login...
             </div>
           </div>
         ) : (
@@ -223,8 +269,8 @@ const RegisterScreen = ({ onBack }) => {
               onChange={set("nama")}
             />
             <Input
-              label={selectedRole === "pertamina" ? "Unit / Depot" : "Perusahaan"}
-              placeholder={selectedRole === "pertamina" ? "Depot ..." : "PT. ..."}
+              label={selectedRole === "depot" ? "Unit / Depot" : "Perusahaan / Unit"}
+              placeholder={selectedRole === "depot" ? "Depot Terminal ..." : "PT. ..."}
               value={form.perusahaan}
               onChange={set("perusahaan")}
             />
@@ -241,14 +287,39 @@ const RegisterScreen = ({ onBack }) => {
               onChange={set("pass")}
               type="password"
             />
+            <Input
+              label="Kode Karyawan"
+              placeholder="Contoh: TKN-001"
+              value={form.kode}
+              onChange={(v) => set("kode")(v.toUpperCase())}
+            />
+
+            {/* Info kode */}
+            <div
+              style={{
+                fontSize: 11,
+                color: theme.textMuted,
+                marginBottom: 12,
+                padding: "8px 10px",
+                background: theme.bg,
+                borderRadius: 8,
+                lineHeight: 1.5,
+              }}
+            >
+              ℹ️ Kode karyawan diberikan oleh admin/supervisor. Setiap kode hanya bisa digunakan
+              satu kali.
+            </div>
 
             {error && (
               <div
                 style={{
                   fontSize: 13,
                   color: "#EF4444",
-                  marginBottom: 8,
+                  marginBottom: 12,
                   textAlign: "center",
+                  padding: "8px",
+                  background: "#FEF2F2",
+                  borderRadius: 8,
                 }}
               >
                 {error}
@@ -256,7 +327,7 @@ const RegisterScreen = ({ onBack }) => {
             )}
 
             <Btn onClick={handleRegister} variant="primary" disabled={loading}>
-              {loading ? "Membuat Akun..." : "Buat Akun"}
+              {loading ? "Memproses..." : "Buat Akun"}
             </Btn>
           </>
         )}

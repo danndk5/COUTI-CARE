@@ -1,20 +1,49 @@
 import Icon from "./Icon";
 import theme from "../styles/theme";
 
-const BottomNav = ({ active, onNav, role }) => {
-  // role teknisi = gabungan transportir (driver) + mekanik (sementara masih 2 string lama,
-  // belum dimigrasi ke "teknisi" tunggal — lihat catatan migrasi role)
-  const isTeknisi = role === "transportir" || role === "mekanik";
+// Helper terpusat — gunakan ini di semua file lain, jangan cek role string langsung
+export const isTeknisi = (role) => role === "teknisi" || role === "transportir" || role === "mekanik";
+export const isDepot   = (role) => role === "depot"   || role === "pertamina";
+export const isHSE     = (role) => role === "hse";
+export const isP1      = (role) => role === "p1";
 
-  const navItems = [
-    { id: "dashboard", label: "Beranda", icon: "home" },
-    ...(isTeknisi ? [{ id: "form", label: "Cek Baru", icon: "plus" }] : []),
-    ...(isTeknisi ? [{ id: "dashboard-tugas", label: "Tugas Perbaikan", icon: "wrench" }] : []),
-    { id: "history", label: "Riwayat", icon: "history" },
-    // Maintenance HANYA untuk role selain teknisi (misal pertamina), sesuai
-    // instruksi: tombol Maintenance dihilangkan dari nav teknisi.
-    ...(!isTeknisi ? [{ id: "maintenance", label: "Maintenance", icon: "wrench" }] : []),
-  ];
+const NAV_ITEMS = {
+  // Beranda | Pengecekan | Tindak Lanjut | Riwayat
+  teknisi: [
+    { id: "dashboard",      label: "Beranda",        icon: "home"    },
+    { id: "form",           label: "Pengecekan",     icon: "plus",  center: true },
+    { id: "tindak-lanjut",  label: "Tindak Lanjut",  icon: "wrench" },
+    { id: "history",        label: "Riwayat",        icon: "history" },
+  ],
+  // Beranda | Riwayat | Maintenance
+  depot: [
+    { id: "dashboard",   label: "Beranda",     icon: "home"    },
+    { id: "history",     label: "Riwayat",     icon: "history" },
+    { id: "maintenance", label: "Maintenance", icon: "wrench"  },
+  ],
+  // Beranda | Pengecekan | Tindak Lanjut | Riwayat
+  hse: [
+    { id: "dashboard",      label: "Beranda",        icon: "home"    },
+    { id: "form",           label: "Pengecekan",     icon: "plus",  center: true },
+    { id: "tindak-lanjut",  label: "Tindak Lanjut",  icon: "wrench" },
+    { id: "history",        label: "Riwayat",        icon: "history" },
+  ],
+  // Beranda | Pengecekan | Tindak Lanjut | Riwayat
+  p1: [
+    { id: "dashboard",      label: "Beranda",        icon: "home"    },
+    { id: "form",           label: "Pengecekan",     icon: "plus",  center: true },
+    { id: "tindak-lanjut",  label: "Tindak Lanjut",  icon: "wrench" },
+    { id: "history",        label: "Riwayat",        icon: "history" },
+  ],
+};
+
+const BottomNav = ({ active, onNav, role }) => {
+  // Normalisasi role lama supaya backward compatible
+  let normalizedRole = role;
+  if (role === "transportir" || role === "mekanik") normalizedRole = "teknisi";
+  if (role === "pertamina") normalizedRole = "depot";
+
+  const navItems = NAV_ITEMS[normalizedRole] ?? NAV_ITEMS.teknisi;
 
   return (
     <div
@@ -33,8 +62,7 @@ const BottomNav = ({ active, onNav, role }) => {
       }}
     >
       {navItems.map((n) => {
-        const isActive = active === n.id;
-        const isCenter = n.id === "form";
+        const isActive = active === n.id || (n.id === "dashboard" && active === "dashboard");
         return (
           <div
             key={n.id}
@@ -49,7 +77,7 @@ const BottomNav = ({ active, onNav, role }) => {
               color: isActive ? theme.primary : theme.textMuted,
             }}
           >
-            {isCenter ? (
+            {n.center ? (
               <div
                 style={{
                   width: 42,

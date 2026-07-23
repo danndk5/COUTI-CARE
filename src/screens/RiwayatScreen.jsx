@@ -3,6 +3,7 @@ import Badge from "../components/Badge";
 import BottomNav from "../components/BottomNav";
 import Btn from "../components/Btn";
 import Card from "../components/Card";
+import Icon from "../components/Icon";
 import theme from "../styles/theme";
 import { supabase } from "../lib/supabase";
 import { formatDate, formatTime } from "../lib/dateHelper";
@@ -18,8 +19,6 @@ const RiwayatScreen = ({ role, onNav, onOpenDetail }) => {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-
-  const isTeknisi = role === "teknisi";
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -38,10 +37,15 @@ const RiwayatScreen = ({ role, onNav, onOpenDetail }) => {
         return;
       }
 
-      let query = supabase.from("inspeksi").select("*");
-
-      if (isTeknisi) {
-        query = query.eq("user_id", user.id);
+      let query;
+      if (role === "hse") {
+        query = supabase.from("inspeksi_hse").select("*").eq("user_id", user.id);
+      } else if (role === "p1") {
+        query = supabase.from("inspeksi_p1").select("*").eq("user_id", user.id);
+      } else if (role === "teknisi" || role === "transportir" || role === "mekanik") {
+        query = supabase.from("inspeksi").select("*").eq("user_id", user.id);
+      } else {
+        query = supabase.from("inspeksi").select("*");
       }
 
       const { data: inspeksiData, error: fetchError } = await query.order(
@@ -68,7 +72,7 @@ const RiwayatScreen = ({ role, onNav, onOpenDetail }) => {
     } finally {
       setLoading(false);
     }
-  }, [isTeknisi]);
+  }, [role]);
 
   useEffect(() => {
     loadData();
@@ -95,6 +99,9 @@ const RiwayatScreen = ({ role, onNav, onOpenDetail }) => {
           boxShadow: theme.shadow,
         }}
       >
+        <div onClick={() => onNav("dashboard")} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, cursor: "pointer", color: theme.textSub, fontSize: 13 }}>
+         <Icon name="arrow" size={16} color={theme.textSub} /> Kembali
+        </div>
         <div
           style={{ fontWeight: 800, fontSize: 20, color: theme.text, marginBottom: 14 }}
         >
