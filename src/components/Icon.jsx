@@ -1,6 +1,6 @@
 import DepotIcon from "../assets/icons/depot.png";
 import HSEIcon from "../assets/icons/hse.png";
-import P1Icon from "../assets/icons/p1.png";
+import P1Icon from "../assets/icons/P1.png";
 const Icon = ({ name, size = 20, color = "currentColor" }) => {
   const icons = {
     gps: (
