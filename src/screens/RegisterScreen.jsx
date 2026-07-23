@@ -9,9 +9,9 @@ import { supabase } from "../lib/supabase";
 const ROLES = [
   {
     value: "depot",
-    label: "Depot / Pertamina",
-    icon: "eye",
-    desc: "Monitor dashboard GPS, CCTV, Uji Kedap & Cek Random",
+    label: "Depot",
+    icon: "depot",
+    desc: "Monitor dashboard GPS, CCTV, Uji Kedap & Random Cek",
   },
   {
     value: "teknisi",
@@ -22,14 +22,14 @@ const ROLES = [
   {
     value: "hse",
     label: "HSE",
-    icon: "shield",
-    desc: "Pengecekan Uji Kedap Suara kendaraan MT",
+    icon: "hse",
+    desc: "Pengecekan Uji Kedap Suara MT",
   },
   {
     value: "p1",
-    label: "P1 (Random Cek)",
-    icon: "search",
-    desc: "Pengecekan & temuan acak kendaraan MT",
+    label: "P1",
+    icon: "p1",
+    desc: "Random Cek MT",
   },
 ];
 

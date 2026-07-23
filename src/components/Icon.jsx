@@ -1,3 +1,6 @@
+import DepotIcon from "../assets/icons/depot.png";
+import HSEIcon from "../assets/icons/hse.png";
+import P1Icon from "../assets/icons/p1.png";
 const Icon = ({ name, size = 20, color = "currentColor" }) => {
   const icons = {
     gps: (
@@ -59,6 +62,57 @@ const Icon = ({ name, size = 20, color = "currentColor" }) => {
         <rect x="3" y="3" width="18" height="18" rx="2" />
         <circle cx="8.5" cy="8.5" r="1.5" />
         <polyline points="21,15 16,10 5,21" />
+      </svg>
+    ),  
+    shield: (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2">
+        <path d="M12 2L5 5v6c0 5 3.5 9 7 11 3.5-2 7-6 7-11V5l-7-3z"/>
+        <polyline points="9,12 11,14 15,10"/>
+      </svg>  
+    ),
+    depot: (
+      <img
+        src={DepotIcon}
+        alt="Depot"
+        width={size}
+        height={size}
+        style={{
+          width: size,
+          height: size,
+          objectFit: "contain",
+        }}
+      />
+    ),
+    hse: (
+      <img
+        src={HSEIcon}
+        alt="HSE"
+        width={size}
+        height={size}
+        style={{
+          width: size,
+          height: size, 
+          objectFit: "contain",
+        }}
+      />
+    ),
+    p1: (
+      <img
+        src={P1Icon}
+        alt="P1"
+        width={size}
+        height={size}
+        style={{
+          width: size,
+          height: size,
+          objectFit: "contain",
+        }}
+      />
+    ),
+    search: (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2">
+        <circle cx="11" cy="11" r="7"/>
+        <line x1="16.65" y1="16.65" x2="21" y2="21"/>
       </svg>
     ),
     logout: (
