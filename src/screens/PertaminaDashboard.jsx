@@ -280,9 +280,10 @@ const TabGPS = ({ onOpenDetail, onOpenKategori, isDesktop }) => {
 // TAB 2: Uji Kedap MT (data dari inspeksi_hse, semua akun HSE)
 // ─────────────────────────────────────────────────────────────────────────────
 const TabHSE = ({ isDesktop }) => {
-  const [list, setList]     = useState([]);
+  const [list, setList]       = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter]   = useState("semua");
+  const [activeBar, setActiveBar] = useState(null); // dateStr bar yang aktif
 
   useEffect(() => {
     const loadData = async () => {
@@ -298,9 +299,9 @@ const TabHSE = ({ isDesktop }) => {
   }, []);
 
   const stats = {
-    total:   list.length,
-    kedap:   list.filter((i) => i.status === "selesai").length,
-    perlu:   list.filter((i) => i.status !== "selesai").length,
+    total: list.length,
+    kedap: list.filter((i) => i.status === "selesai").length,
+    perlu: list.filter((i) => i.status !== "selesai").length,
   };
 
   // Trend 7 hari
@@ -310,6 +311,7 @@ const TabHSE = ({ isDesktop }) => {
     return {
       day: d.toLocaleDateString("id-ID", { weekday: "short" }),
       jumlah: list.filter((item) => item.created_at?.slice(0, 10) === dateStr).length,
+      dateStr,
     };
   });
 
@@ -317,18 +319,38 @@ const TabHSE = ({ isDesktop }) => {
   const merahPutih = list.filter((i) => i.kategori_mt === "merah_putih").length;
   const industri   = list.filter((i) => i.kategori_mt === "industri").length;
   const pieData = [
-    merahPutih > 0 && { name: "MT Merah Putih", value: merahPutih, color: "#EF4444" },
-    industri   > 0 && { name: "MT Industri",    value: industri,   color: "#3B82F6" },
+    merahPutih > 0 && { name: "MT Merah Putih", value: merahPutih, color: "#EF4444", filterKey: "merah_putih" },
+    industri   > 0 && { name: "MT Industri",    value: industri,   color: "#3B82F6", filterKey: "industri" },
   ].filter(Boolean);
 
+  // Handler klik pie — toggle filter
+  const handlePieClick = (entry) => {
+    const key = entry?.filterKey || entry?.name?.toLowerCase().replace(" ", "_");
+    setActiveBar(null);
+    setFilter((prev) => prev === key ? "semua" : key);
+  };
+
+  // Handler klik bar — filter per tanggal
+  const handleBarClick = (data) => {
+    if (!data?.dateStr) return;
+    setFilter("semua");
+    setActiveBar((prev) => prev === data.dateStr ? null : data.dateStr);
+  };
+
   const filteredList = list.filter((item) => {
-    if (filter === "semua")  return true;
-    if (filter === "selesai") return item.status === "selesai";
-    if (filter === "perlu")   return item.status !== "selesai";
+    if (activeBar) return item.created_at?.slice(0, 10) === activeBar;
+    if (filter === "semua")       return true;
+    if (filter === "selesai")     return item.status === "selesai";
+    if (filter === "perlu")       return item.status !== "selesai";
     if (filter === "merah_putih") return item.kategori_mt === "merah_putih";
     if (filter === "industri")    return item.kategori_mt === "industri";
     return true;
   });
+
+  // Label aktif untuk info di atas list
+  const activeFilterLabel = activeBar
+    ? `📅 ${new Date(`${activeBar}T00:00:00`).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}`
+    : null;
 
   if (loading) return (
     <div style={{ padding: 40, textAlign: "center", color: theme.textMuted }}>Memuat data...</div>
@@ -338,9 +360,12 @@ const TabHSE = ({ isDesktop }) => {
     <div style={{ padding: isDesktop ? "24px 32px" : "20px 16px" }}>
       {/* Stats */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: isDesktop ? DESKTOP_GRID_GAP : 8, marginBottom: 20 }}>
-        <StatCard value={stats.total} label="Total Diperiksa" color={theme.primary} bg={theme.primaryLight} isDesktop={isDesktop} />
-        <StatCard value={stats.perlu} label="Perlu Tindak Lanjut" color={theme.danger} bg={theme.dangerLight} isDesktop={isDesktop} />
-        <StatCard value={stats.kedap} label="Sudah Selesai" color={theme.success} bg={theme.successLight} isDesktop={isDesktop} />
+        <StatCard value={stats.total} label="Total Diperiksa"     color={theme.primary} bg={theme.primaryLight} isDesktop={isDesktop}
+          onClick={() => { setFilter("semua"); setActiveBar(null); }} />
+        <StatCard value={stats.perlu} label="Perlu Tindak Lanjut" color={theme.danger}  bg={theme.dangerLight}  isDesktop={isDesktop}
+          onClick={() => { setFilter("perlu"); setActiveBar(null); }} />
+        <StatCard value={stats.kedap} label="Sudah Selesai"       color={theme.success} bg={theme.successLight} isDesktop={isDesktop}
+          onClick={() => { setFilter("selesai"); setActiveBar(null); }} />
       </div>
 
       {/* Charts */}
@@ -352,22 +377,37 @@ const TabHSE = ({ isDesktop }) => {
               <div style={{ width: 120, height: 120, flexShrink: 0 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
-                    <Pie data={pieData} dataKey="value" nameKey="name" innerRadius={32} outerRadius={56} paddingAngle={2}>
-                      {pieData.map((entry, index) => <Cell key={index} fill={entry.color} />)}
+                    <Pie data={pieData} dataKey="value" nameKey="name" innerRadius={32} outerRadius={56} paddingAngle={2}
+                      onClick={handlePieClick} cursor="pointer">
+                      {pieData.map((entry, index) => (
+                        <Cell key={index} fill={entry.color}
+                          opacity={filter === entry.filterKey || filter === "semua" ? 1 : 0.35} />
+                      ))}
                     </Pie>
                   </PieChart>
                 </ResponsiveContainer>
               </div>
               <div style={{ flex: 1 }}>
                 {pieData.map((d) => (
-                  <div key={d.name} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                    <div style={{ width: 10, height: 10, borderRadius: "50%", background: d.color }} />
+                  <div key={d.name} onClick={() => handlePieClick(d)}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 8, marginBottom: 10,
+                      cursor: "pointer", opacity: filter === d.filterKey || filter === "semua" ? 1 : 0.4,
+                    }}>
+                    <div style={{ width: 10, height: 10, borderRadius: "50%", background: d.color,
+                      outline: filter === d.filterKey ? `2px solid ${d.color}` : "none", outlineOffset: 2 }} />
                     <div style={{ fontSize: 12, color: theme.text, fontWeight: 600 }}>{d.name}</div>
                     <div style={{ fontSize: 12, color: theme.textMuted, marginLeft: "auto" }}>
                       {d.value} ({stats.total > 0 ? Math.round((d.value / stats.total) * 100) : 0}%)
                     </div>
                   </div>
                 ))}
+                {filter !== "semua" && (
+                  <div onClick={() => { setFilter("semua"); setActiveBar(null); }}
+                    style={{ fontSize: 11, color: theme.primary, fontWeight: 600, cursor: "pointer", marginTop: 4 }}>
+                    ✕ Reset filter
+                  </div>
+                )}
               </div>
             </div>
           </Card>
@@ -380,15 +420,28 @@ const TabHSE = ({ isDesktop }) => {
               <BarChart data={last7Days} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
                 <XAxis dataKey="day" tick={{ fontSize: 11, fill: theme.textMuted }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fontSize: 11, fill: theme.textMuted }} axisLine={false} tickLine={false} allowDecimals={false} />
-                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${theme.border}` }} />
-                <Bar dataKey="jumlah" fill="#F59E0B" radius={[6, 6, 0, 0]} />
+                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${theme.border}` }}
+                  formatter={(value) => [`${value} inspeksi`, "Jumlah"]} />
+                <Bar dataKey="jumlah" radius={[6, 6, 0, 0]} cursor="pointer" onClick={handleBarClick}>
+                  {last7Days.map((entry) => (
+                    <Cell key={entry.dateStr}
+                      fill={activeBar === entry.dateStr ? "#D97706" : "#F59E0B"}
+                      opacity={activeBar && activeBar !== entry.dateStr ? 0.4 : 1} />
+                  ))}
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
+          {activeBar && (
+            <div onClick={() => setActiveBar(null)}
+              style={{ fontSize: 11, color: theme.primary, fontWeight: 600, cursor: "pointer", marginTop: 8, textAlign: "right" }}>
+              ✕ Reset filter tanggal
+            </div>
+          )}
         </Card>
       </div>
 
-      {/* Filter */}
+      {/* Filter pills */}
       <div style={{ display: "flex", gap: 8, marginBottom: 16, overflowX: "auto" }}>
         {[
           { key: "semua",       label: "Semua" },
@@ -397,18 +450,26 @@ const TabHSE = ({ isDesktop }) => {
           { key: "merah_putih", label: "MT Merah Putih" },
           { key: "industri",    label: "MT Industri" },
         ].map((f) => (
-          <div key={f.key} onClick={() => setFilter(f.key)} style={{
+          <div key={f.key} onClick={() => { setFilter(f.key); setActiveBar(null); }} style={{
             padding: "8px 14px", borderRadius: 20, fontSize: 12, fontWeight: 600,
             whiteSpace: "nowrap", cursor: "pointer",
-            background: filter === f.key ? "#F59E0B" : theme.surfaceAlt,
-            color: filter === f.key ? "#fff" : theme.textMuted,
+            background: !activeBar && filter === f.key ? "#F59E0B" : theme.surfaceAlt,
+            color: !activeBar && filter === f.key ? "#fff" : theme.textMuted,
           }}>
             {f.label}
           </div>
         ))}
       </div>
 
-      <SectionLabel>Daftar Laporan Uji Kedap MT</SectionLabel>
+      {/* Label filter aktif */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <SectionLabel style={{ margin: 0 }}>
+          Daftar Laporan Uji Kedap MT
+          {activeFilterLabel && <span style={{ fontSize: 12, fontWeight: 600, color: "#D97706", marginLeft: 8 }}>{activeFilterLabel}</span>}
+        </SectionLabel>
+        <div style={{ fontSize: 12, color: theme.textMuted }}>{filteredList.length} laporan</div>
+      </div>
+
       {filteredList.length > 0 ? (
         <div style={{ display: "grid", gridTemplateColumns: isDesktop ? "repeat(3, 1fr)" : "1fr", gap: isDesktop ? DESKTOP_GRID_GAP : 0 }}>
           {filteredList.map((item) => (
@@ -419,9 +480,7 @@ const TabHSE = ({ isDesktop }) => {
                 </div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontWeight: 700, fontSize: 14, color: theme.text }}>{item.nomor_polisi}</div>
-                  <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 1 }}>
-                    {item.transportir}
-                  </div>
+                  <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 1 }}>{item.transportir}</div>
                   <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 1 }}>
                     {item.kapasitas_mt} · {item.jumlah_kompartemen} kompartemen · {item.kategori_mt === "merah_putih" ? "MT Merah Putih" : "MT Industri"}
                   </div>
@@ -441,8 +500,9 @@ const TabHSE = ({ isDesktop }) => {
           ))}
         </div>
       ) : (
-        <Card style={{ padding: "20px 16px", textAlign: "center" }}>
-          <div style={{ fontSize: 13, color: theme.textMuted }}>Tidak ada data</div>
+        <Card style={{ padding: "28px 16px", textAlign: "center" }}>
+          <div style={{ fontSize: 32, marginBottom: 8 }}>📋</div>
+          <div style={{ fontSize: 13, color: theme.textMuted }}>Tidak ada data untuk filter ini</div>
         </Card>
       )}
     </div>

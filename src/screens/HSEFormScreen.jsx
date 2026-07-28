@@ -34,6 +34,22 @@ const CHECKPOINTS = [
   { menit: 30, label: "5 Menit Keenam (30 Menit)" },
 ];
 
+// ── Draft persistence (agar data tidak hilang kalau app ke-close / ke tombol home) ──
+const DRAFT_KEY = "hse_form_draft_v1";
+
+const saveDraft = (data) => {
+  try { localStorage.setItem(DRAFT_KEY, JSON.stringify(data)); } catch {}
+};
+const loadDraft = () => {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+};
+const clearDraft = () => {
+  try { localStorage.removeItem(DRAFT_KEY); } catch {}
+};
+
 // ── Helpers timestamp & GPS ───────────────────────────────────────────────────
 const decimalToDMS = (decimal, posDir, negDir) => {
   const dir = decimal >= 0 ? posDir : negDir;
@@ -112,8 +128,42 @@ const uploadFoto = async (file, kategori) => {
   return { name: fileName, url: pub.publicUrl, path: data.path };
 };
 
+// ── PhotoLightbox — preview foto full-screen sebelum dikirim ──────────────────
+const PhotoLightbox = ({ url, onClose }) => {
+  if (!url) return null;
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, background: "rgba(0,0,0,0.92)", zIndex: 9999,
+        display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
+      }}
+    >
+      <div
+        onClick={onClose}
+        style={{
+          position: "absolute", top: 44, right: 20, color: "#fff", fontSize: 26,
+          fontWeight: 700, cursor: "pointer", width: 36, height: 36, borderRadius: 18,
+          background: "rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center",
+        }}
+      >
+        ✕
+      </div>
+      <div style={{ position: "absolute", top: 46, left: 20, color: "#fff", fontSize: 12, opacity: 0.8 }}>
+        Ketuk di mana saja untuk menutup
+      </div>
+      <img
+        src={url}
+        alt="Preview foto"
+        onClick={(e) => e.stopPropagation()}
+        style={{ maxWidth: "100%", maxHeight: "100%", borderRadius: 10, objectFit: "contain" }}
+      />
+    </div>
+  );
+};
+
 // ── CameraCapture — 1 foto, wajib ────────────────────────────────────────────
-const CameraCaptureSingle = ({ label, onFoto, foto, errorFoto }) => {
+const CameraCaptureSingle = ({ label, onFoto, foto, errorFoto, onPreview }) => {
   const [capState, setCapState] = useState("idle");
   const [permErr,  setPermErr]  = useState(null);
   const fileInputRef = useRef(null);
@@ -176,11 +226,22 @@ const CameraCaptureSingle = ({ label, onFoto, foto, errorFoto }) => {
           onChange={handleFileChange} style={{ display: "none" }} />
         {foto ? (
           <div style={{
-            display: "flex", alignItems: "center", justifyContent: "space-between",
-            padding: "8px 12px", background: theme.primaryLight, borderRadius: 8, fontSize: 12, color: theme.primary,
+            display: "flex", alignItems: "center", gap: 10,
+            padding: "8px 10px", background: theme.primaryLight, borderRadius: 8,
           }}>
-            <span>✓ {foto.name}</span>
-            <div onClick={removeFoto} style={{ cursor: "pointer", fontWeight: 700, color: theme.danger }}>✕</div>
+            <img
+              src={foto.url}
+              alt={foto.name}
+              onClick={() => onPreview?.(foto.url)}
+              style={{ width: 46, height: 46, borderRadius: 6, objectFit: "cover", cursor: "pointer", border: `1px solid ${theme.primary}`, flexShrink: 0 }}
+            />
+            <div style={{ flex: 1, fontSize: 12, color: theme.primary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              ✓ {foto.name}
+            </div>
+            <div onClick={() => onPreview?.(foto.url)} style={{ cursor: "pointer", fontSize: 12, color: theme.primary, fontWeight: 700, flexShrink: 0 }}>
+              🔍 Lihat
+            </div>
+            <div onClick={removeFoto} style={{ cursor: "pointer", fontWeight: 700, color: theme.danger, flexShrink: 0 }}>✕</div>
           </div>
         ) : (
           <Btn onClick={handleCaptureClick} variant="outline"
@@ -197,7 +258,7 @@ const CameraCaptureSingle = ({ label, onFoto, foto, errorFoto }) => {
 };
 
 // ── CameraCapture — multi foto dengan keterangan per foto ─────────────────────
-const CameraCaptureMulti = ({ kategori, fotoList, onFotoList }) => {
+const CameraCaptureMulti = ({ kategori, fotoList, onFotoList, onPreview }) => {
   const [capState, setCapState] = useState("idle");
   const [permErr,  setPermErr]  = useState(null);
   const fileInputRef = useRef(null);
@@ -259,9 +320,24 @@ const CameraCaptureMulti = ({ kategori, fotoList, onFotoList }) => {
       {/* Daftar foto yang sudah diambil */}
       {fotoList.map((foto, idx) => (
         <div key={foto.path} style={{ marginBottom: 10, padding: 12, borderRadius: 10, background: theme.surfaceAlt, border: `1px solid ${theme.border}` }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-            <div style={{ fontSize: 12, color: theme.primary, fontWeight: 600 }}>✓ Foto {idx + 1}: {foto.name}</div>
-            <div onClick={() => removeFoto(idx)} style={{ cursor: "pointer", fontWeight: 700, color: theme.danger, fontSize: 13 }}>✕</div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, gap: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+              <img
+                src={foto.url}
+                alt={foto.name}
+                onClick={() => onPreview?.(foto.url)}
+                style={{ width: 42, height: 42, borderRadius: 6, objectFit: "cover", cursor: "pointer", border: `1px solid ${theme.primary}`, flexShrink: 0 }}
+              />
+              <div style={{ fontSize: 12, color: theme.primary, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                ✓ Foto {idx + 1}: {foto.name}
+              </div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+              <div onClick={() => onPreview?.(foto.url)} style={{ cursor: "pointer", fontSize: 12, color: theme.primary, fontWeight: 700 }}>
+                🔍 Lihat
+              </div>
+              <div onClick={() => removeFoto(idx)} style={{ cursor: "pointer", fontWeight: 700, color: theme.danger, fontSize: 13 }}>✕</div>
+            </div>
           </div>
           <textarea
             placeholder="Keterangan foto ini (wajib)..."
@@ -318,6 +394,13 @@ const HSEFormScreen = ({ onBack, onNav }) => {
   const [checkpoints,  setCheckpoints]  = useState(initCheckpoints);
   const [fotoTemuan,   setFotoTemuan]   = useState([]); // foto bebas saat tidak kedap
 
+  // Preview foto (lightbox) — untuk cek foto blur/buram sebelum dikirim
+  const [previewUrl, setPreviewUrl] = useState(null);
+
+  // Draft/auto-save — supaya data tidak hilang kalau app ke-close tiba-tiba
+  const [ready, setReady] = useState(false);
+  const [showRestoreBanner, setShowRestoreBanner] = useState(false);
+
   // Errors
   const [errors, setErrors] = useState({});
 
@@ -344,6 +427,68 @@ const HSEFormScreen = ({ onBack, onNav }) => {
       if (user) setCurrentUser(user.id);
     });
   }, []);
+
+  // Pulihkan draft form dari localStorage (kalau ada) saat pertama kali dibuka
+  useEffect(() => {
+    const draft = loadDraft();
+    if (draft) {
+      setStep(draft.step || "sop");
+      setSopPage(draft.sopPage || 0);
+      setKendaraan(draft.kendaraan || { polisi: "", kapasitas: "", kompartemen: "", transportir: "" });
+      setKategoriMT(draft.kategoriMT || "");
+      setIsAutoFilled(!!draft.isAutoFilled);
+      setLookupStatus(draft.isAutoFilled ? "found" : "idle");
+      setCheckpoints(draft.checkpoints && draft.checkpoints.length ? draft.checkpoints : initCheckpoints());
+      setFotoTemuan(draft.fotoTemuan || []);
+      setShowRestoreBanner(true);
+    }
+    setReady(true);
+  }, []);
+
+  // Simpan draft form setiap ada perubahan (debounce ringan lewat effect)
+  useEffect(() => {
+    if (!ready) return;
+    const hasProgress =
+      step !== "sop" || sopPage > 0 || kendaraan.polisi.trim() || kategoriMT || fotoTemuan.length > 0;
+    if (!hasProgress) { clearDraft(); return; }
+    saveDraft({ step, sopPage, kendaraan, kategoriMT, isAutoFilled, checkpoints, fotoTemuan });
+  }, [ready, step, sopPage, kendaraan, kategoriMT, isAutoFilled, checkpoints, fotoTemuan]);
+
+  const resetSemua = () => {
+    clearDraft();
+    setStep("sop");
+    setSopPage(0);
+    setKendaraan({ polisi: "", kapasitas: "", kompartemen: "", transportir: "" });
+    setKategoriMT("");
+    setIsAutoFilled(false);
+    setLookupStatus("idle");
+    setCheckpoints(initCheckpoints());
+    setFotoTemuan([]);
+    setShowRestoreBanner(false);
+  };
+
+  const restoreBanner = showRestoreBanner && (
+    <div style={{
+      margin: "0 16px 12px", padding: "10px 14px", borderRadius: 10,
+      background: "#FEF3C7", color: "#92400E", fontSize: 12, fontWeight: 600,
+      display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
+    }}>
+      <span>♻️ Data pengisian sebelumnya berhasil dipulihkan.</span>
+      <div style={{ display: "flex", gap: 12, flexShrink: 0 }}>
+        <span
+          onClick={() => {
+            if (window.confirm("Hapus semua data yang sudah diisi dan mulai formulir baru?")) {
+              resetSemua();
+            }
+          }}
+          style={{ cursor: "pointer", textDecoration: "underline" }}
+        >
+          Mulai Baru
+        </span>
+        <span onClick={() => setShowRestoreBanner(false)} style={{ cursor: "pointer" }}>✕</span>
+      </div>
+    </div>
+  );
 
   // Debounce lookup nopol
   const handlePolisiChange = useCallback((val) => {
@@ -496,9 +641,12 @@ const HSEFormScreen = ({ onBack, onNav }) => {
         { onConflict: "nomor_polisi" }
       );
 
+      // Data sudah tersimpan di server, draft lokal tidak diperlukan lagi
+      clearDraft();
+
       alert(statusAkhir === "kedap"
-        ? "✅ Kendaraan LULUS Uji Kedap! Data berhasil dikirim ke Depot."
-        : "❌ Kendaraan TIDAK LULUS Uji Kedap. Data temuan berhasil dikirim ke Depot.");
+        ? "✅ Kendaraan LULUS Uji Kedap! Data berhasil di Unggah."
+        : "❌ Kendaraan TIDAK LULUS Uji Kedap. Data temuan berhasil dI Unggah.");
       onNav("dashboard");
     } catch (err) {
       alert("Gagal menyimpan: " + err.message);
@@ -568,6 +716,8 @@ const HSEFormScreen = ({ onBack, onNav }) => {
           <div style={{ fontSize: 13, color: theme.textMuted, marginTop: 2 }}>Isi sekali, otomatis tersimpan</div>
         </div>
 
+        {restoreBanner}
+
         <div style={{ flex: 1, overflowY: "auto", padding: "20px 16px", paddingBottom: 100 }}>
           <div style={{ background: theme.surface, borderRadius: 14, padding: 16, border: `1px solid ${theme.border}` }}>
             <Input label="Nomor Polisi" placeholder="Contoh: B 1234 XY"
@@ -620,6 +770,8 @@ const HSEFormScreen = ({ onBack, onNav }) => {
           <div style={{ fontSize: 13, color: theme.textMuted, marginTop: 2 }}>Pilih jenis kendaraan MT</div>
         </div>
 
+        {restoreBanner}
+
         <div style={{ flex: 1, padding: "24px 16px" }}>
           {[
             { value: "merah_putih", label: "MT Merah Putih", desc: "Untuk SPBU / distribusi BBM retail", icon: "🔴" },
@@ -671,6 +823,8 @@ const HSEFormScreen = ({ onBack, onNav }) => {
           </div>
         )}
       </div>
+
+      {restoreBanner}
 
       <div style={{ flex: 1, overflowY: "auto", padding: "20px 16px", paddingBottom: 100 }}>
         {errors.uji_incomplete && (
@@ -733,6 +887,7 @@ const HSEFormScreen = ({ onBack, onNav }) => {
                   onFoto={(foto) => setCheckpointFoto(idx, foto)}
                   foto={cp.foto}
                   errorFoto={!!errors[`cp_${idx}_foto`]}
+                  onPreview={setPreviewUrl}
                 />
               )}
 
@@ -760,6 +915,7 @@ const HSEFormScreen = ({ onBack, onNav }) => {
               kategori="temuan"
               fotoList={fotoTemuan}
               onFotoList={setFotoTemuan}
+              onPreview={setPreviewUrl}
             />
           </div>
         )}
@@ -767,9 +923,11 @@ const HSEFormScreen = ({ onBack, onNav }) => {
 
       <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 430, padding: "12px 16px", background: theme.surface, borderTop: `1px solid ${theme.border}` }}>
         <Btn onClick={handleSubmit} variant="primary" icon="check" disabled={submitting || !statusAkhir}>
-          {submitting ? "Menyimpan..." : "Simpan & Kirim ke Depot"}
+          {submitting ? "Menyimpan..." : "Simpan & Unggah"}
         </Btn>
       </div>
+
+      <PhotoLightbox url={previewUrl} onClose={() => setPreviewUrl(null)} />
     </div>
   );
 };
