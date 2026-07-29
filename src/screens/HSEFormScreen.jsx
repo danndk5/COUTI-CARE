@@ -786,8 +786,8 @@ const HSEFormScreen = ({ onBack, onNav }) => {
 
         <div style={{ flex: 1, padding: "24px 16px" }}>
           {[
-            { value: "merah_putih", label: "MT Merah Putih", desc: "Untuk SPBU / distribusi BBM retail", icon: "🔴" },
-            { value: "industri",    label: "MT Industri",    desc: "Untuk pabrik, tambang, industri", icon: "🏭" },
+            { value: "merah_putih", label: "MT Merah Putih", desc: "Untuk Umum", icon: "🟥" },
+            { value: "industri",    label: "MT Industri",    desc: "Untuk Industri", icon: "🟦" },
           ].map((opt) => (
             <div key={opt.value} onClick={() => setKategoriMT(opt.value)} style={{
               marginBottom: 14, padding: 20, borderRadius: 14, cursor: "pointer",

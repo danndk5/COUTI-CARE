@@ -727,7 +727,7 @@ const PertaminaDashboard = ({ onNav, onLogout, onOpenDetail, onOpenKategori, onO
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <div>
             <div style={{ fontSize: 13, color: theme.textMuted }}>Akun Depot,</div>
-            <div style={{ fontSize: 19, fontWeight: 800, color: theme.text }}>DASHBOARD MONITORING</div>
+            <div style={{ fontSize: 19, fontWeight: 800, color: theme.text }}>Dashboard Monitoring</div>
             <div style={{ display: "inline-block", marginTop: 4, fontSize: 11, fontWeight: 600, padding: "2px 10px", borderRadius: 20, background: theme.primaryLight, color: theme.primary }}>
               SIMT · Sistem Inspeksi Mobil Tangki
             </div>
