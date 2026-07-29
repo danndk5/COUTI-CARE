@@ -72,14 +72,16 @@ const formatServerTime = (date) => {
 };
 
 // ── applyOverlay (shared) ─────────────────────────────────────────────────────
-const applyOverlay = async (file) => {
+// cachedPos: hasil getCurrentPosition yang sudah diambil sebelumnya (saat cek izin),
+// dipakai lagi di sini supaya GPS tidak di-fetch dua kali (yang bikin proses lama).
+const applyOverlay = async (file, cachedPos) => {
   let serverTime = new Date();
   try {
     const { data } = await supabase.rpc("get_server_time");
     if (data) serverTime = new Date(data);
   } catch {}
 
-  const pos = await new Promise((res, rej) =>
+  const pos = cachedPos || await new Promise((res, rej) =>
     navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: true, timeout: 15000 })
   );
   const { latitude, longitude } = pos.coords;
@@ -118,8 +120,8 @@ const applyOverlay = async (file) => {
 };
 
 // ── uploadFoto (shared) ───────────────────────────────────────────────────────
-const uploadFoto = async (file, kategori) => {
-  const blob     = await applyOverlay(file);
+const uploadFoto = async (file, kategori, cachedPos) => {
+  const blob     = await applyOverlay(file, cachedPos);
   const fileName = `hse-${kategori}-${Date.now()}.jpg`;
   const { data, error } = await supabase.storage
     .from("foto-inspeksi").upload(fileName, blob, { contentType: "image/jpeg" });
@@ -167,16 +169,20 @@ const CameraCaptureSingle = ({ label, onFoto, foto, errorFoto, onPreview }) => {
   const [capState, setCapState] = useState("idle");
   const [permErr,  setPermErr]  = useState(null);
   const fileInputRef = useRef(null);
+  const cachedPosRef  = useRef(null); // lokasi hasil cek izin, dipakai ulang saat upload (hindari fetch GPS 2x)
 
   const handleCaptureClick = async () => {
     setPermErr(null);
     setCapState("checking");
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-      stream.getTracks().forEach((t) => t.stop());
-      await new Promise((res, rej) =>
-        navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: true, timeout: 10000 })
-      );
+      const [, pos] = await Promise.all([
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+          .then((stream) => stream.getTracks().forEach((t) => t.stop())),
+        new Promise((res, rej) =>
+          navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: true, timeout: 15000 })
+        ),
+      ]);
+      cachedPosRef.current = pos;
       setCapState("idle");
       fileInputRef.current?.click();
     } catch {
@@ -190,12 +196,13 @@ const CameraCaptureSingle = ({ label, onFoto, foto, errorFoto, onPreview }) => {
     if (!file) return;
     setCapState("processing");
     try {
-      const result = await uploadFoto(file, label.replace(/\s+/g, "_").toLowerCase());
+      const result = await uploadFoto(file, label.replace(/\s+/g, "_").toLowerCase(), cachedPosRef.current);
       onFoto(result);
     } catch (err) {
       alert("⚠️ " + err.message);
     } finally {
       setCapState("idle");
+      cachedPosRef.current = null;
       e.target.value = "";
     }
   };
@@ -262,16 +269,20 @@ const CameraCaptureMulti = ({ kategori, fotoList, onFotoList, onPreview }) => {
   const [capState, setCapState] = useState("idle");
   const [permErr,  setPermErr]  = useState(null);
   const fileInputRef = useRef(null);
+  const cachedPosRef  = useRef(null); // lokasi hasil cek izin, dipakai ulang saat upload (hindari fetch GPS 2x)
 
   const handleCaptureClick = async () => {
     setPermErr(null);
     setCapState("checking");
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-      stream.getTracks().forEach((t) => t.stop());
-      await new Promise((res, rej) =>
-        navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: true, timeout: 10000 })
-      );
+      const [, pos] = await Promise.all([
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+          .then((stream) => stream.getTracks().forEach((t) => t.stop())),
+        new Promise((res, rej) =>
+          navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: true, timeout: 15000 })
+        ),
+      ]);
+      cachedPosRef.current = pos;
       setCapState("idle");
       fileInputRef.current?.click();
     } catch {
@@ -285,12 +296,13 @@ const CameraCaptureMulti = ({ kategori, fotoList, onFotoList, onPreview }) => {
     if (!file) return;
     setCapState("processing");
     try {
-      const result = await uploadFoto(file, `${kategori}-${Date.now()}`);
+      const result = await uploadFoto(file, `${kategori}-${Date.now()}`, cachedPosRef.current);
       onFotoList((prev) => [...prev, { ...result, keterangan: "" }]);
     } catch (err) {
       alert("⚠️ " + err.message);
     } finally {
       setCapState("idle");
+      cachedPosRef.current = null;
       e.target.value = "";
     }
   };
