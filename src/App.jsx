@@ -14,6 +14,8 @@ import FilteredInspeksiScreen from "./screens/FilteredInspeksiScreen";
 import ForgotPasswordScreen   from "./screens/ForgotPasswordScreen";
 import ResetPasswordScreen    from "./screens/ResetPasswordScreen";
 import RiwayatKerusakanScreen from "./screens/RiwayatKerusakanScreen";
+import DetailHSEScreen        from "./screens/DetailHSEScreen";
+import DetailP1Screen         from "./screens/DetailP1Screen";
 import { supabase }           from "./lib/supabase";
 import { useBreakpoint }      from "./hooks/useBreakpoint";
 import { MOBILE_MAX_WIDTH, DESKTOP_CONTENT_MAX_WIDTH } from "./styles/layout";
@@ -39,6 +41,8 @@ const App = () => {
   const [detailKategoriType,  setDetailKategoriType]  = useState(null);
   const [detailKategoriValue, setDetailKategoriValue] = useState(null);
   const [filteredInspFilter,  setFilteredInspFilter]  = useState(null);
+  const [selectedHSEId, setSelectedHSEId]       = useState(null);
+  const [selectedP1Id, setSelectedP1Id]         = useState(null);
   const [initialTab, setInitialTab]             = useState("beranda");
   const [showExitConfirm, setShowExitConfirm]   = useState(false);
   const isDesktop = useBreakpoint();
@@ -116,6 +120,8 @@ const App = () => {
         setRole(null);
         setSelectedInspeksiId(null);
         setSelectedTugasId(null);
+        setSelectedHSEId(null);
+        setSelectedP1Id(null);
       }
       if (event === "PASSWORD_RECOVERY") {
         window.history.replaceState({ screen: "reset-password" }, "");
@@ -159,6 +165,8 @@ const App = () => {
       if (state && "detailKategoriType"  in state) setDetailKategoriType(state.detailKategoriType ?? null);
       if (state && "detailKategoriValue" in state) setDetailKategoriValue(state.detailKategoriValue ?? null);
       if (state && "filteredInspFilter"  in state) setFilteredInspFilter(state.filteredInspFilter ?? null);
+      if (state && "selectedHSEId"       in state) setSelectedHSEId(state.selectedHSEId ?? null);
+      if (state && "selectedP1Id"        in state) setSelectedP1Id(state.selectedP1Id ?? null);
     };
 
     window.addEventListener("popstate", handlePopState);
@@ -220,6 +228,18 @@ const App = () => {
     setScreen("filtered-inspeksi");
   };
 
+  const openDetailHSE = (id) => {
+    setSelectedHSEId(id);
+    window.history.pushState({ screen: "detail-hse", selectedHSEId: id }, "");
+    setScreen("detail-hse");
+  };
+
+  const openDetailP1 = (id) => {
+    setSelectedP1Id(id);
+    window.history.pushState({ screen: "detail-p1", selectedP1Id: id }, "");
+    setScreen("detail-p1");
+  };
+
   // ── Render dashboard sesuai role ──────────────────────────────────────
   const renderDashboard = () => {
     if (isDepot(role)) {
@@ -229,6 +249,8 @@ const App = () => {
           onLogout={handleLogout}
           onOpenDetail={openDetail}
           onOpenKategori={openKategori}
+          onOpenDetailHSE={openDetailHSE}
+          onOpenDetailP1={openDetailP1}
         />
       );
     }
@@ -307,6 +329,7 @@ const App = () => {
     "detail", "tugas-detail",
     "riwayat-kerusakan", "detail-kategori", "filtered-inspeksi",
     "forgot-password", "reset-password",
+    "detail-hse", "detail-p1",
   ];
   const safeScreen = knownScreens.includes(screen) ? screen : "login";
 
@@ -339,6 +362,8 @@ const App = () => {
             onOpenDetail={openDetail}
           />
         )}
+        {safeScreen === "detail-hse"     && <DetailHSEScreen hseId={selectedHSEId} onBack={() => window.history.back()} />}
+        {safeScreen === "detail-p1"      && <DetailP1Screen  p1Id={selectedP1Id}  onBack={() => window.history.back()} />}
         {safeScreen === "forgot-password" && <ForgotPasswordScreen navigate={setScreen} />}
         {safeScreen === "reset-password"  && <ResetPasswordScreen  navigate={setScreen} />}
       </div>

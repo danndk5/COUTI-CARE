@@ -279,7 +279,7 @@ const TabGPS = ({ onOpenDetail, onOpenKategori, isDesktop }) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB 2: Uji Kedap MT (data dari inspeksi_hse, semua akun HSE)
 // ─────────────────────────────────────────────────────────────────────────────
-const TabHSE = ({ isDesktop }) => {
+const TabHSE = ({ isDesktop, onOpenDetail }) => {
   const [list, setList]       = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter]   = useState("semua");
@@ -473,7 +473,11 @@ const TabHSE = ({ isDesktop }) => {
       {filteredList.length > 0 ? (
         <div style={{ display: "grid", gridTemplateColumns: isDesktop ? "repeat(3, 1fr)" : "1fr", gap: isDesktop ? DESKTOP_GRID_GAP : 0 }}>
           {filteredList.map((item) => (
-            <Card key={item.id} style={{ marginBottom: isDesktop ? 0 : 10, padding: "14px 16px" }}>
+            <Card
+              key={item.id}
+              onClick={() => onOpenDetail?.(item.id)}
+              style={{ marginBottom: isDesktop ? 0 : 10, padding: "14px 16px", cursor: "pointer" }}
+            >
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 <div style={{ width: 42, height: 42, borderRadius: 12, background: "#FEF3C7", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                   <Icon name="car" size={18} color="#D97706" />
@@ -488,12 +492,15 @@ const TabHSE = ({ isDesktop }) => {
                     {formatDate(item.created_at)} · {formatTime(item.created_at)}
                   </div>
                 </div>
-                <div style={{
-                  fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 20, flexShrink: 0,
-                  background: item.status === "selesai" ? theme.successLight : theme.dangerLight,
-                  color: item.status === "selesai" ? theme.success : theme.danger,
-                }}>
-                  {item.status === "selesai" ? "✓ Selesai" : "⚠️ Perlu Tindak Lanjut"}
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6, flexShrink: 0 }}>
+                  <div style={{
+                    fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 20,
+                    background: item.status === "selesai" ? theme.successLight : theme.dangerLight,
+                    color: item.status === "selesai" ? theme.success : theme.danger,
+                  }}>
+                    {item.status === "selesai" ? "✓ Selesai" : "⚠️ Perlu Tindak Lanjut"}
+                  </div>
+                  <Icon name="chevron" size={14} color={theme.textMuted} />
                 </div>
               </div>
             </Card>
@@ -512,7 +519,7 @@ const TabHSE = ({ isDesktop }) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB 3: Cek Random P1 (data dari inspeksi_p1, semua akun P1)
 // ─────────────────────────────────────────────────────────────────────────────
-const TabP1 = ({ isDesktop }) => {
+const TabP1 = ({ isDesktop, onOpenDetail }) => {
   const [list, setList]       = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter]   = useState("semua");
@@ -647,7 +654,11 @@ const TabP1 = ({ isDesktop }) => {
           {filteredList.map((item) => {
             const temuanCount = item.inspeksi_p1_temuan?.length || 0;
             return (
-              <Card key={item.id} style={{ marginBottom: isDesktop ? 0 : 10, padding: "14px 16px" }}>
+              <Card
+                key={item.id}
+                onClick={() => onOpenDetail?.(item.id)}
+                style={{ marginBottom: isDesktop ? 0 : 10, padding: "14px 16px", cursor: "pointer" }}
+              >
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                   <div style={{ width: 42, height: 42, borderRadius: 12, background: "#EDE9FE", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                     <Icon name="car" size={18} color="#7C3AED" />
@@ -664,12 +675,15 @@ const TabP1 = ({ isDesktop }) => {
                       {temuanCount} temuan · {formatDate(item.created_at)}
                     </div>
                   </div>
-                  <div style={{
-                    fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 20, flexShrink: 0,
-                    background: item.status === "selesai" ? theme.successLight : theme.dangerLight,
-                    color: item.status === "selesai" ? theme.success : theme.danger,
-                  }}>
-                    {item.status === "selesai" ? "✓ Selesai" : "⚠️ Perlu Tindak Lanjut"}
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6, flexShrink: 0 }}>
+                    <div style={{
+                      fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 20,
+                      background: item.status === "selesai" ? theme.successLight : theme.dangerLight,
+                      color: item.status === "selesai" ? theme.success : theme.danger,
+                    }}>
+                      {item.status === "selesai" ? "✓ Selesai" : "⚠️ Perlu Tindak Lanjut"}
+                    </div>
+                    <Icon name="chevron" size={14} color={theme.textMuted} />
                   </div>
                 </div>
 
@@ -702,7 +716,7 @@ const TabP1 = ({ isDesktop }) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN: PertaminaDashboard
 // ─────────────────────────────────────────────────────────────────────────────
-const PertaminaDashboard = ({ onNav, onLogout, onOpenDetail, onOpenKategori }) => {
+const PertaminaDashboard = ({ onNav, onLogout, onOpenDetail, onOpenKategori, onOpenDetailHSE, onOpenDetailP1 }) => {
   const isDesktop = useBreakpoint();
   const [activeTab, setActiveTab] = useState("gps");
 
@@ -712,10 +726,10 @@ const PertaminaDashboard = ({ onNav, onLogout, onOpenDetail, onOpenKategori }) =
       <div style={{ background: theme.surface, padding: "48px 20px 0", borderBottom: `1px solid ${theme.border}`, boxShadow: theme.shadow }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <div>
-            <div style={{ fontSize: 13, color: theme.textMuted }}>Akun Depot,</div>
-            <div style={{ fontSize: 19, fontWeight: 800, color: theme.text }}>Dashboard Monitoring</div>
+            <div style={{ fontSize: 13, color: theme.textMuted }}>Selamat datang,</div>
+            <div style={{ fontSize: 19, fontWeight: 800, color: theme.text }}>Pertamina</div>
             <div style={{ display: "inline-block", marginTop: 4, fontSize: 11, fontWeight: 600, padding: "2px 10px", borderRadius: 20, background: theme.primaryLight, color: theme.primary }}>
-              SIMT · Sistem Inspeksi Mobil Tangki
+              Depot · Monitor & Audit
             </div>
           </div>
           <div onClick={onLogout} style={{ cursor: "pointer", padding: 10, borderRadius: 12, background: theme.surfaceAlt }}>
@@ -734,8 +748,8 @@ const PertaminaDashboard = ({ onNav, onLogout, onOpenDetail, onOpenKategori }) =
           isDesktop={isDesktop}
         />
       )}
-      {activeTab === "hse" && <TabHSE isDesktop={isDesktop} />}
-      {activeTab === "p1"  && <TabP1  isDesktop={isDesktop} />}
+      {activeTab === "hse" && <TabHSE isDesktop={isDesktop} onOpenDetail={onOpenDetailHSE} />}
+      {activeTab === "p1"  && <TabP1  isDesktop={isDesktop} onOpenDetail={onOpenDetailP1} />}
 
       <BottomNav active="home" onNav={onNav} role="pertamina" />
     </div>
