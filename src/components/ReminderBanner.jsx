@@ -65,52 +65,57 @@ const ReminderBanner = ({ armadaList, maxShow = 3 }) => {
         </div>
       </div>
 
-      {expanded && (
-        <div>
-          {shown.map((a) => {
-            const info = REMINDER_INFO[a.status];
-            return (
-              <div
-                key={a.nomor_polisi}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  padding: "10px 14px",
-                  borderRadius: 12,
-                  background: info.bg,
-                  marginBottom: 8,
-                }}
-              >
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: "#1E293B" }}>
-                    {a.nomor_polisi}
-                  </div>
-                  <div style={{ fontSize: 11, color: "#64748B", marginTop: 1 }}>
-                    {a.nama_armada} · {a.perusahaan_transportir}
-                  </div>
+      <div
+        style={{
+          maxHeight: expanded ? 2000 : 0,
+          opacity: expanded ? 1 : 0,
+          overflow: "hidden",
+          transition: "max-height 0.3s ease, opacity 0.25s ease",
+        }}
+      >
+        {shown.map((a) => {
+          const info = REMINDER_INFO[a.status];
+          return (
+            <div
+              key={a.nomor_polisi}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "10px 14px",
+                borderRadius: 12,
+                background: info.bg,
+                marginBottom: 8,
+              }}
+            >
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#1E293B" }}>
+                  {a.nomor_polisi}
                 </div>
-                <div
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 700,
-                    color: info.color,
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {info.emoji} {info.label}
+                <div style={{ fontSize: 11, color: "#64748B", marginTop: 1 }}>
+                  {a.nama_armada} · {a.perusahaan_transportir}
                 </div>
               </div>
-            );
-          })}
-
-          {needsAttention.length > maxShow && (
-            <div style={{ fontSize: 11, color: "#64748B", textAlign: "center", marginTop: 4 }}>
-              +{needsAttention.length - maxShow} armada lainnya perlu perhatian
+              <div
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: info.color,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {info.emoji} {info.label}
+              </div>
             </div>
-          )}
-        </div>
-      )}
+          );
+        })}
+
+        {needsAttention.length > maxShow && (
+          <div style={{ fontSize: 11, color: "#64748B", textAlign: "center", marginTop: 4 }}>
+            +{needsAttention.length - maxShow} armada lainnya perlu perhatian
+          </div>
+        )}
+      </div>
     </div>
   );
 };

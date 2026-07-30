@@ -71,11 +71,36 @@ const CheckpointRow = ({ checkpoint }) => {
   );
 };
 
+const TemuanFotoCard = ({ foto }) => (
+  <div
+    style={{
+      borderRadius: 10,
+      background: theme.dangerLight,
+      marginBottom: 8,
+      overflow: "hidden",
+    }}
+  >
+    <a href={foto.url} target="_blank" rel="noopener noreferrer" style={{ display: "block" }}>
+      <img
+        src={foto.url}
+        alt="Foto temuan"
+        style={{ width: "100%", height: 160, objectFit: "cover" }}
+      />
+    </a>
+    {foto.keterangan && (
+      <div style={{ padding: "10px 12px", fontSize: 12, color: theme.textSub }}>
+        {foto.keterangan}
+      </div>
+    )}
+  </div>
+);
+
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 
 const DetailHSEScreen = ({ hseId, onBack }) => {
   const [data, setData] = useState(null);
   const [checkpoints, setCheckpoints] = useState([]);
+  const [temuanFoto, setTemuanFoto] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -101,6 +126,14 @@ const DetailHSEScreen = ({ hseId, onBack }) => {
 
       if (checkpointError) throw checkpointError;
       setCheckpoints(checkpointData || []);
+
+      const { data: temuanData, error: temuanError } = await supabase
+        .from("foto_inspeksi_hse")
+        .select("*")
+        .eq("inspeksi_hse_id", hseId);
+
+      if (temuanError) throw temuanError;
+      setTemuanFoto(temuanData || []);
     } catch (err) {
       setError("Gagal memuat detail. Silakan coba lagi.");
       console.error("Error loading HSE detail:", err);
@@ -218,6 +251,16 @@ const DetailHSEScreen = ({ hseId, onBack }) => {
           <Card style={{ padding: "20px 16px", textAlign: "center" }}>
             <div style={{ fontSize: 13, color: theme.textMuted }}>Belum ada data checkpoint</div>
           </Card>
+        )}
+
+        {/* Foto Temuan (khusus checkpoint yang tidak kedap) */}
+        {temuanFoto.length > 0 && (
+          <>
+            <SectionLabel style={{ marginTop: 20 }}>Foto Temuan ({temuanFoto.length})</SectionLabel>
+            {temuanFoto.map((f) => (
+              <TemuanFotoCard key={f.id} foto={f} />
+            ))}
+          </>
         )}
       </div>
     </div>

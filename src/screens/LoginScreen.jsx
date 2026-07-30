@@ -32,14 +32,20 @@ const LoginScreen = ({ onLogin, onGoRegister, onForgotPassword }) => {
     }
 
     // Ambil role dari tabel profiles
-    const { data: profile } = await supabase
+    const { data: profile, error: profileError } = await supabase
       .from("profiles")
       .select("role")
       .eq("id", data.user.id)
       .single();
 
-    const role = profile?.role || "transportir";
-    onLogin(role);
+    if (profileError || !profile) {
+      setError("Profil akun belum lengkap. Silakan hubungi admin.");
+      await supabase.auth.signOut();
+      setLoading(false);
+      return;
+    }
+
+    onLogin(profile.role);
     setLoading(false);
   };
 

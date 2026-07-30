@@ -43,6 +43,7 @@ const App = () => {
   const [filteredInspFilter,  setFilteredInspFilter]  = useState(null);
   const [selectedHSEId, setSelectedHSEId]       = useState(null);
   const [selectedP1Id, setSelectedP1Id]         = useState(null);
+  const [depotActiveTab, setDepotActiveTab]     = useState("gps");
   const [initialTab, setInitialTab]             = useState("beranda");
   const [showExitConfirm, setShowExitConfirm]   = useState(false);
   const isDesktop = useBreakpoint();
@@ -122,6 +123,7 @@ const App = () => {
         setSelectedTugasId(null);
         setSelectedHSEId(null);
         setSelectedP1Id(null);
+        setDepotActiveTab("gps");
       }
       if (event === "PASSWORD_RECOVERY") {
         window.history.replaceState({ screen: "reset-password" }, "");
@@ -251,6 +253,8 @@ const App = () => {
           onOpenKategori={openKategori}
           onOpenDetailHSE={openDetailHSE}
           onOpenDetailP1={openDetailP1}
+          activeTab={depotActiveTab}
+          onChangeTab={setDepotActiveTab}
         />
       );
     }

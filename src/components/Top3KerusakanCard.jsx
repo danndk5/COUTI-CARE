@@ -69,8 +69,15 @@ const Top3KerusakanCard = ({ groupedKerusakan, onViewAll }) => {
         )}
       </div>
 
-      {expanded &&
-        top3.map((g, i) => (
+      <div
+        style={{
+          maxHeight: expanded ? 1000 : 0,
+          opacity: expanded ? 1 : 0,
+          overflow: "hidden",
+          transition: "max-height 0.3s ease, opacity 0.25s ease",
+        }}
+      >
+        {top3.map((g, i) => (
           <div
             key={g.nomor_polisi}
             style={{
@@ -119,6 +126,7 @@ const Top3KerusakanCard = ({ groupedKerusakan, onViewAll }) => {
             </div>
           </div>
         ))}
+      </div>
     </div>
   );
 };

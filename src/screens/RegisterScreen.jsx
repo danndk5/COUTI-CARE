@@ -90,6 +90,13 @@ const RegisterScreen = ({ onBack }) => {
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: form.email,
         password: form.pass,
+        options: {
+          data: {
+            nama: form.nama,
+            perusahaan: form.perusahaan,
+            role: selectedRole,
+          },
+        },
       });
 
       if (authError) {
@@ -116,21 +123,7 @@ const RegisterScreen = ({ onBack }) => {
         return;
       }
 
-      // STEP 4: Simpan profil
-      const { error: profileError } = await supabase.from("profiles").insert([
-        {
-          id: userId,
-          nama: form.nama,
-          perusahaan: form.perusahaan,
-          role: selectedRole,
-        },
-      ]);
 
-      if (profileError) {
-        setError("Gagal membuat profil: " + profileError.message);
-        setLoading(false);
-        return;
-      }
 
       setSuccess(true);
       setLoading(false);

@@ -32,6 +32,115 @@ const StatCard = ({ value, label, color, bg, isDesktop, onClick }) => (
   </div>
 );
 
+// ── ErrorState ────────────────────────────────────────────────────────────────
+const ErrorState = ({ message = "Gagal memuat data. Periksa koneksi Anda.", onRetry }) => (
+  <div style={{
+    padding: "28px 16px", textAlign: "center", background: theme.dangerLight,
+    borderRadius: 14, border: `1px solid #FECACA`,
+  }}>
+    <div style={{ fontSize: 28, marginBottom: 8 }}>⚠️</div>
+    <div style={{ fontSize: 13, fontWeight: 700, color: theme.danger, marginBottom: 4 }}>
+      Gagal memuat data
+    </div>
+    <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 14 }}>
+      {message}
+    </div>
+    <div
+      onClick={onRetry}
+      style={{
+        display: "inline-block", padding: "8px 18px", borderRadius: 10,
+        background: theme.danger, color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer",
+      }}
+    >
+      Coba Lagi
+    </div>
+  </div>
+);
+
+// ── Skeleton Loader ───────────────────────────────────────────────────────────
+const SkeletonBox = ({ width = "100%", height = 14, radius = 8, style = {} }) => (
+  <div
+    className="skeleton-pulse"
+    style={{ width, height, borderRadius: radius, background: "#E2E8F0", ...style }}
+  />
+);
+
+const SkeletonStatCard = ({ isDesktop }) => (
+  <div style={{ background: "#F1F5F9", borderRadius: 16, padding: isDesktop ? "22px 16px" : "16px 12px" }}>
+    <SkeletonBox height={isDesktop ? 26 : 20} width="55%" style={{ margin: "0 auto 8px" }} />
+    <SkeletonBox height={9} width="75%" style={{ margin: "0 auto" }} />
+  </div>
+);
+
+const SkeletonReportCard = () => (
+  <Card style={{ marginBottom: 10, padding: "14px 16px" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+      <SkeletonBox width={42} height={42} radius={12} />
+      <div style={{ flex: 1 }}>
+        <SkeletonBox height={13} width="45%" style={{ marginBottom: 8 }} />
+        <SkeletonBox height={10} width="65%" style={{ marginBottom: 6 }} />
+        <SkeletonBox height={10} width="35%" />
+      </div>
+      <SkeletonBox width={64} height={20} radius={20} />
+    </div>
+  </Card>
+);
+
+const SkeletonChartCard = () => (
+  <Card style={{ marginBottom: 20, padding: 16 }}>
+    <SkeletonBox height={10} width="40%" style={{ marginBottom: 16 }} />
+    <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+      <SkeletonBox width={120} height={120} radius={60} />
+      <div style={{ flex: 1 }}>
+        <SkeletonBox height={12} width="90%" style={{ marginBottom: 10 }} />
+        <SkeletonBox height={12} width="70%" />
+      </div>
+    </div>
+  </Card>
+);
+
+const TabSkeleton = ({ isDesktop, statCount = 4 }) => (
+  <div style={{ padding: isDesktop ? "24px 32px" : "20px 16px" }}>
+    <div style={{
+      display: "grid",
+      gridTemplateColumns: `repeat(${statCount}, 1fr)`,
+      gap: isDesktop ? DESKTOP_GRID_GAP : 8, marginBottom: 20,
+    }}>
+      {Array.from({ length: statCount }).map((_, i) => <SkeletonStatCard key={i} isDesktop={isDesktop} />)}
+    </div>
+    <div style={{ display: "grid", gridTemplateColumns: isDesktop ? "1fr 1fr" : "1fr", gap: isDesktop ? DESKTOP_GRID_GAP : 0 }}>
+      <SkeletonChartCard />
+      <SkeletonChartCard />
+    </div>
+    <SkeletonBox height={12} width={160} style={{ marginBottom: 14 }} />
+    {Array.from({ length: 3 }).map((_, i) => <SkeletonReportCard key={i} />)}
+  </div>
+);
+
+// ── Filter pills dengan fade di ujung scroll ────────────────────────────────
+const FilterPillsRow = ({ children }) => (
+  <div style={{ position: "relative", marginBottom: 16 }}>
+    <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingRight: 20 }}>
+      {children}
+    </div>
+    <div style={{
+      position: "absolute", top: 0, right: 0, bottom: 0, width: 28,
+      background: `linear-gradient(to right, rgba(248,250,252,0), ${theme.bg})`,
+      pointerEvents: "none",
+    }} />
+  </div>
+);
+
+// ── Health score mini progress bar ──────────────────────────────────────────
+const HealthMiniBar = ({ value, color }) => (
+  <div style={{ width: 56 }}>
+    <div style={{ height: 5, borderRadius: 4, background: "#E2E8F0", overflow: "hidden" }}>
+      <div style={{ height: "100%", width: `${Math.max(0, Math.min(100, value))}%`, background: color, borderRadius: 4, transition: "width 0.4s ease" }} />
+    </div>
+    <div style={{ fontSize: 10, fontWeight: 700, color, textAlign: "right", marginTop: 3 }}>{value}%</div>
+  </div>
+);
+
 // ── Tab Bar ───────────────────────────────────────────────────────────────────
 const TAB_LIST = [
   { key: "gps",    label: "GPS & CCTV" },
@@ -72,45 +181,54 @@ const TabGPS = ({ onOpenDetail, onOpenKategori, isDesktop }) => {
   const [inspeksiList, setInspeksiList] = useState([]);
   const [stats, setStats] = useState({ total: 0, normal: 0, abnormal: 0, selesai: 0 });
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [filter, setFilter] = useState("semua");
 
-  useEffect(() => {
-    const loadData = async () => {
-      setLoading(true);
-      const { data } = await supabase
+  const loadData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const { data, error: fetchError } = await supabase
         .from("inspeksi").select("*").order("created_at", { ascending: false });
 
-      if (data) {
-        const isNormal = (item) => {
-          const gpsNormal =
-            item.segel_gps?.toLowerCase() === "normal" &&
-            item.kabel_gps?.toLowerCase() === "normal";
-          const cctvNormal =
-            item.segel_bricket_dashcam?.toLowerCase() === "normal" &&
-            item.segel_kabel_dashcam?.toLowerCase() === "normal" &&
-            item.segel_bricket_kanan?.toLowerCase() === "normal" &&
-            item.segel_kabel_kanan?.toLowerCase() === "normal" &&
-            item.segel_bricket_kiri?.toLowerCase() === "normal" &&
-            item.segel_kabel_kiri?.toLowerCase() === "normal";
-          return gpsNormal && cctvNormal;
-        };
+      if (fetchError) throw fetchError;
 
-        const withStatus = data.map((item) => {
-          const health = calculateHealthScore(item);
-          const healthCategory = getHealthStatus(health.overall).label;
-          return { ...item, overallStatus: isNormal(item) ? "Normal" : "Abnormal", health, healthCategory };
-        });
+      const isNormal = (item) => {
+        const gpsNormal =
+          item.segel_gps?.toLowerCase() === "normal" &&
+          item.kabel_gps?.toLowerCase() === "normal";
+        const cctvNormal =
+          item.segel_bricket_dashcam?.toLowerCase() === "normal" &&
+          item.segel_kabel_dashcam?.toLowerCase() === "normal" &&
+          item.segel_bricket_kanan?.toLowerCase() === "normal" &&
+          item.segel_kabel_kanan?.toLowerCase() === "normal" &&
+          item.segel_bricket_kiri?.toLowerCase() === "normal" &&
+          item.segel_kabel_kiri?.toLowerCase() === "normal";
+        return gpsNormal && cctvNormal;
+      };
 
-        setInspeksiList(withStatus);
-        setStats({
-          total: withStatus.length,
-          normal: withStatus.filter((i) => i.overallStatus === "Normal").length,
-          abnormal: withStatus.filter((i) => i.overallStatus === "Abnormal").length,
-          selesai: withStatus.filter((i) => i.status === "selesai").length,
-        });
-      }
+      const withStatus = (data || []).map((item) => {
+        const health = calculateHealthScore(item);
+        const healthCategory = getHealthStatus(health.overall).label;
+        return { ...item, overallStatus: isNormal(item) ? "Normal" : "Abnormal", health, healthCategory };
+      });
+
+      setInspeksiList(withStatus);
+      setStats({
+        total: withStatus.length,
+        normal: withStatus.filter((i) => i.overallStatus === "Normal").length,
+        abnormal: withStatus.filter((i) => i.overallStatus === "Abnormal").length,
+        selesai: withStatus.filter((i) => i.status === "selesai").length,
+      });
+    } catch (err) {
+      console.error("Error loading GPS & CCTV data:", err);
+      setError(err.message || "Terjadi kesalahan saat memuat data.");
+    } finally {
       setLoading(false);
-    };
+    }
+  };
+
+  useEffect(() => {
     loadData();
   }, []);
 
@@ -140,8 +258,12 @@ const TabGPS = ({ onOpenDetail, onOpenKategori, isDesktop }) => {
     };
   });
 
-  if (loading) return (
-    <div style={{ padding: 40, textAlign: "center", color: theme.textMuted }}>Memuat data...</div>
+  if (loading) return <TabSkeleton isDesktop={isDesktop} statCount={4} />;
+
+  if (error) return (
+    <div style={{ padding: isDesktop ? "24px 32px" : "20px 16px" }}>
+      <ErrorState message={error} onRetry={loadData} />
+    </div>
   );
 
   return (
@@ -208,7 +330,7 @@ const TabGPS = ({ onOpenDetail, onOpenKategori, isDesktop }) => {
       </div>
 
       {/* Filter & List */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 16, overflowX: "auto" }}>
+      <FilterPillsRow>
         {[
           { key: "semua",    label: "Semua" },
           { key: "normal",   label: "Normal" },
@@ -224,7 +346,7 @@ const TabGPS = ({ onOpenDetail, onOpenKategori, isDesktop }) => {
             {f.label}
           </div>
         ))}
-      </div>
+      </FilterPillsRow>
 
       <SectionLabel>Daftar Laporan GPS & CCTV</SectionLabel>
       {filteredList.length > 0 ? (
@@ -249,9 +371,7 @@ const TabGPS = ({ onOpenDetail, onOpenKategori, isDesktop }) => {
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
                   <Badge status={item.overallStatus} />
-                  <div style={{ fontSize: 11, fontWeight: 700, color: HEALTH_CATEGORY_COLORS[item.healthCategory] }}>
-                    {item.health.overall}%
-                  </div>
+                  <HealthMiniBar value={item.health.overall} color={HEALTH_CATEGORY_COLORS[item.healthCategory]} />
                 </div>
               </div>
               {item.status === "selesai" && (
@@ -268,8 +388,9 @@ const TabGPS = ({ onOpenDetail, onOpenKategori, isDesktop }) => {
           ))}
         </div>
       ) : (
-        <Card style={{ padding: "20px 16px", textAlign: "center" }}>
-          <div style={{ fontSize: 13, color: theme.textMuted }}>Tidak ada data</div>
+        <Card style={{ padding: "28px 16px", textAlign: "center" }}>
+          <div style={{ fontSize: 32, marginBottom: 8 }}>📋</div>
+          <div style={{ fontSize: 13, color: theme.textMuted }}>Tidak ada data untuk filter ini</div>
         </Card>
       )}
     </div>
@@ -282,19 +403,29 @@ const TabGPS = ({ onOpenDetail, onOpenKategori, isDesktop }) => {
 const TabHSE = ({ isDesktop, onOpenDetail }) => {
   const [list, setList]       = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState(null);
   const [filter, setFilter]   = useState("semua");
   const [activeBar, setActiveBar] = useState(null); // dateStr bar yang aktif
 
-  useEffect(() => {
-    const loadData = async () => {
-      setLoading(true);
-      const { data } = await supabase
+  const loadData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const { data, error: fetchError } = await supabase
         .from("inspeksi_hse")
         .select("*")
         .order("created_at", { ascending: false });
+      if (fetchError) throw fetchError;
       setList(data || []);
+    } catch (err) {
+      console.error("Error loading Uji Kedap MT data:", err);
+      setError(err.message || "Terjadi kesalahan saat memuat data.");
+    } finally {
       setLoading(false);
-    };
+    }
+  };
+
+  useEffect(() => {
     loadData();
   }, []);
 
@@ -319,8 +450,8 @@ const TabHSE = ({ isDesktop, onOpenDetail }) => {
   const merahPutih = list.filter((i) => i.kategori_mt === "merah_putih").length;
   const industri   = list.filter((i) => i.kategori_mt === "industri").length;
   const pieData = [
-    merahPutih > 0 && { name: "MT Merah Putih", value: merahPutih, color: "#EF4444", filterKey: "merah_putih" },
-    industri   > 0 && { name: "MT Industri",    value: industri,   color: "#3B82F6", filterKey: "industri" },
+    merahPutih > 0 && { name: "MT Merah Putih", value: merahPutih, color: "#6366F1", filterKey: "merah_putih" },
+    industri   > 0 && { name: "MT Industri",    value: industri,   color: "#06B6D4", filterKey: "industri" },
   ].filter(Boolean);
 
   // Handler klik pie — toggle filter
@@ -352,8 +483,12 @@ const TabHSE = ({ isDesktop, onOpenDetail }) => {
     ? `📅 ${new Date(`${activeBar}T00:00:00`).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}`
     : null;
 
-  if (loading) return (
-    <div style={{ padding: 40, textAlign: "center", color: theme.textMuted }}>Memuat data...</div>
+  if (loading) return <TabSkeleton isDesktop={isDesktop} statCount={3} />;
+
+  if (error) return (
+    <div style={{ padding: isDesktop ? "24px 32px" : "20px 16px" }}>
+      <ErrorState message={error} onRetry={loadData} />
+    </div>
   );
 
   return (
@@ -442,7 +577,7 @@ const TabHSE = ({ isDesktop, onOpenDetail }) => {
       </div>
 
       {/* Filter pills */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 16, overflowX: "auto" }}>
+      <FilterPillsRow>
         {[
           { key: "semua",       label: "Semua" },
           { key: "perlu",       label: "Perlu Tindak Lanjut" },
@@ -459,7 +594,7 @@ const TabHSE = ({ isDesktop, onOpenDetail }) => {
             {f.label}
           </div>
         ))}
-      </div>
+      </FilterPillsRow>
 
       {/* Label filter aktif */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
@@ -522,18 +657,28 @@ const TabHSE = ({ isDesktop, onOpenDetail }) => {
 const TabP1 = ({ isDesktop, onOpenDetail }) => {
   const [list, setList]       = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState(null);
   const [filter, setFilter]   = useState("semua");
 
-  useEffect(() => {
-    const loadData = async () => {
-      setLoading(true);
-      const { data } = await supabase
+  const loadData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const { data, error: fetchError } = await supabase
         .from("inspeksi_p1")
         .select("*, inspeksi_p1_temuan(id, judul, keterangan)")
         .order("created_at", { ascending: false });
+      if (fetchError) throw fetchError;
       setList(data || []);
+    } catch (err) {
+      console.error("Error loading Cek Random P1 data:", err);
+      setError(err.message || "Terjadi kesalahan saat memuat data.");
+    } finally {
       setLoading(false);
-    };
+    }
+  };
+
+  useEffect(() => {
     loadData();
   }, []);
 
@@ -557,8 +702,8 @@ const TabP1 = ({ isDesktop, onOpenDetail }) => {
   const merahPutih = list.filter((i) => i.kategori_mt === "merah_putih").length;
   const industri   = list.filter((i) => i.kategori_mt === "industri").length;
   const pieData = [
-    merahPutih > 0 && { name: "MT Merah Putih", value: merahPutih, color: "#EF4444" },
-    industri   > 0 && { name: "MT Industri",    value: industri,   color: "#3B82F6" },
+    merahPutih > 0 && { name: "MT Merah Putih", value: merahPutih, color: "#6366F1" },
+    industri   > 0 && { name: "MT Industri",    value: industri,   color: "#06B6D4" },
   ].filter(Boolean);
 
   const filteredList = list.filter((item) => {
@@ -570,8 +715,12 @@ const TabP1 = ({ isDesktop, onOpenDetail }) => {
     return true;
   });
 
-  if (loading) return (
-    <div style={{ padding: 40, textAlign: "center", color: theme.textMuted }}>Memuat data...</div>
+  if (loading) return <TabSkeleton isDesktop={isDesktop} statCount={3} />;
+
+  if (error) return (
+    <div style={{ padding: isDesktop ? "24px 32px" : "20px 16px" }}>
+      <ErrorState message={error} onRetry={loadData} />
+    </div>
   );
 
   return (
@@ -629,7 +778,7 @@ const TabP1 = ({ isDesktop, onOpenDetail }) => {
       </div>
 
       {/* Filter */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 16, overflowX: "auto" }}>
+      <FilterPillsRow>
         {[
           { key: "semua",       label: "Semua" },
           { key: "perlu",       label: "Perlu Tindak Lanjut" },
@@ -646,7 +795,7 @@ const TabP1 = ({ isDesktop, onOpenDetail }) => {
             {f.label}
           </div>
         ))}
-      </div>
+      </FilterPillsRow>
 
       <SectionLabel>Daftar Laporan Cek Random P1</SectionLabel>
       {filteredList.length > 0 ? (
@@ -705,7 +854,8 @@ const TabP1 = ({ isDesktop, onOpenDetail }) => {
           })}
         </div>
       ) : (
-        <Card style={{ padding: "20px 16px", textAlign: "center" }}>
+        <Card style={{ padding: "28px 16px", textAlign: "center" }}>
+          <div style={{ fontSize: 32, marginBottom: 8 }}>📋</div>
           <div style={{ fontSize: 13, color: theme.textMuted }}>Tidak ada data</div>
         </Card>
       )}
@@ -716,20 +866,23 @@ const TabP1 = ({ isDesktop, onOpenDetail }) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN: PertaminaDashboard
 // ─────────────────────────────────────────────────────────────────────────────
-const PertaminaDashboard = ({ onNav, onLogout, onOpenDetail, onOpenKategori, onOpenDetailHSE, onOpenDetailP1 }) => {
+const PertaminaDashboard = ({ onNav, onLogout, onOpenDetail, onOpenKategori, onOpenDetailHSE, onOpenDetailP1, activeTab, onChangeTab }) => {
   const isDesktop = useBreakpoint();
-  const [activeTab, setActiveTab] = useState("gps");
 
   return (
     <div style={{ minHeight: "100vh", background: theme.bg, paddingBottom: 80 }}>
+      <style>{`
+        @keyframes skeletonPulse { 0% { opacity: 0.55; } 50% { opacity: 1; } 100% { opacity: 0.55; } }
+        .skeleton-pulse { animation: skeletonPulse 1.4s ease-in-out infinite; }
+      `}</style>
       {/* Header */}
       <div style={{ background: theme.surface, padding: "48px 20px 0", borderBottom: `1px solid ${theme.border}`, boxShadow: theme.shadow }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <div>
-            <div style={{ fontSize: 13, color: theme.textMuted }}>Akun Depot,</div>
-            <div style={{ fontSize: 19, fontWeight: 800, color: theme.text }}>Dashboard Monitoring</div>
+            <div style={{ fontSize: 13, color: theme.textMuted }}>Selamat datang,</div>
+            <div style={{ fontSize: 19, fontWeight: 800, color: theme.text }}>Pertamina</div>
             <div style={{ display: "inline-block", marginTop: 4, fontSize: 11, fontWeight: 600, padding: "2px 10px", borderRadius: 20, background: theme.primaryLight, color: theme.primary }}>
-              SIMT · Sistem Inspeksi Mobil Tangki
+              Depot · Monitor & Audit
             </div>
           </div>
           <div onClick={onLogout} style={{ cursor: "pointer", padding: 10, borderRadius: 12, background: theme.surfaceAlt }}>
@@ -737,7 +890,7 @@ const PertaminaDashboard = ({ onNav, onLogout, onOpenDetail, onOpenKategori, onO
           </div>
         </div>
 
-        <TabBar active={activeTab} onChange={setActiveTab} />
+        <TabBar active={activeTab} onChange={onChangeTab} />
       </div>
 
       {/* Tab Content */}
