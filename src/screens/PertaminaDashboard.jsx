@@ -24,7 +24,13 @@ const StatCard = ({ value, label, color, bg, isDesktop, onClick }) => (
     background: bg, borderRadius: 16,
     padding: isDesktop ? "22px 16px" : "16px 12px",
     textAlign: "center", cursor: onClick ? "pointer" : "default",
-  }}>
+    boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
+    border: `1px solid ${color}22`,
+    transition: "transform 0.15s, box-shadow 0.15s",
+  }}
+  onMouseEnter={(e) => { if (onClick) { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 4px 10px rgba(0,0,0,0.08)"; } }}
+  onMouseLeave={(e) => { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "0 1px 2px rgba(0,0,0,0.04)"; }}
+  >
     <div style={{ fontSize: isDesktop ? 28 : 22, fontWeight: 800, color }}>{value}</div>
     <div style={{ fontSize: isDesktop ? 12 : 10, color, fontWeight: 600, marginTop: 2, opacity: 0.85 }}>
       {label}
@@ -133,7 +139,7 @@ const FilterPillsRow = ({ children }) => (
 
 // ── Health score mini progress bar ──────────────────────────────────────────
 const HealthMiniBar = ({ value, color }) => (
-  <div style={{ width: 56 }}>
+  <div style={{ width: 64 }}>
     <div style={{ height: 5, borderRadius: 4, background: "#E2E8F0", overflow: "hidden" }}>
       <div style={{ height: "100%", width: `${Math.max(0, Math.min(100, value))}%`, background: color, borderRadius: 4, transition: "width 0.4s ease" }} />
     </div>
@@ -155,11 +161,12 @@ const TabBar = ({ active, onChange }) => (
   }}>
     {TAB_LIST.map((t) => (
       <div key={t.key} onClick={() => onChange(t.key)} style={{
-        padding: "12px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer",
+        padding: "12px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer",
         color: active === t.key ? theme.primary : theme.textMuted,
-        borderBottom: active === t.key ? `2.5px solid ${theme.primary}` : "2.5px solid transparent",
+        borderBottom: active === t.key ? `3px solid ${theme.primary}` : "3px solid transparent",
         marginBottom: -2, whiteSpace: "nowrap",
-        transition: "color 0.15s",
+        transition: "color 0.15s, border-color 0.15s",
+        letterSpacing: "0.1px",
       }}>
         {t.label}
       </div>
@@ -338,10 +345,12 @@ const TabGPS = ({ onOpenDetail, onOpenKategori, isDesktop }) => {
           { key: "selesai",  label: "Selesai Diperbaiki" },
         ].map((f) => (
           <div key={f.key} onClick={() => setFilter(f.key)} style={{
-            padding: "8px 14px", borderRadius: 20, fontSize: 12, fontWeight: 600,
+            padding: "8px 16px", borderRadius: 20, fontSize: 12, fontWeight: 600,
             whiteSpace: "nowrap", cursor: "pointer",
             background: filter === f.key ? theme.primary : theme.surfaceAlt,
             color: filter === f.key ? "#fff" : theme.textMuted,
+            boxShadow: filter === f.key ? `0 2px 6px ${theme.primary}55` : "none",
+            transition: "all 0.15s",
           }}>
             {f.label}
           </div>
@@ -352,12 +361,19 @@ const TabGPS = ({ onOpenDetail, onOpenKategori, isDesktop }) => {
       {filteredList.length > 0 ? (
         <div style={{ display: "grid", gridTemplateColumns: isDesktop ? "repeat(3, 1fr)" : "1fr", gap: isDesktop ? DESKTOP_GRID_GAP : 0 }}>
           {filteredList.map((item) => (
-            <Card key={item.id} style={{ marginBottom: isDesktop ? 0 : 10, padding: "14px 16px" }}>
+            <Card key={item.id} style={{ 
+              marginBottom: isDesktop ? 0 : 10, padding: "14px 16px",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.06)", borderRadius: 14,
+              }}>
               <div onClick={() => onOpenDetail(item.id)}
                 style={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", marginBottom: 10 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <div style={{ width: 42, height: 42, borderRadius: 12, background: theme.primaryLight, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    <Icon name="car" size={18} color={theme.primary} />
+                  <div style={{
+                    width: 42, height: 42, borderRadius: 12,
+                    background: item.overallStatus === "Abnormal" ? theme.dangerLight : theme.successLight,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                  }}>
+                    <Icon name="car" size={18} color={item.overallStatus === "Abnormal" ? theme.danger : theme.success} />
                   </div>
                   <div>
                     <div style={{ fontWeight: 700, fontSize: 14, color: theme.text }}>{item.nomor_polisi}</div>
