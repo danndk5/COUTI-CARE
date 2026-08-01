@@ -4,6 +4,8 @@ import Card from "../components/Card";
 import Icon from "../components/Icon";
 import theme from "../styles/theme";
 import { supabase } from "../lib/supabase";
+import { useBreakpoint } from "../hooks/useBreakpoint";
+import { SIDEBAR_WIDTH } from "../styles/layout";
 
 // ── List kendaraan (sub-view dari stat card) ──────────────────────────────────
 const KendaraanList = ({ title, items, onBack }) => (
@@ -51,6 +53,7 @@ const KendaraanList = ({ title, items, onBack }) => (
 
 // ── P1Dashboard ───────────────────────────────────────────────────────────────
 const P1Dashboard = ({ role, onNav, onLogout }) => {
+  const isDesktop = useBreakpoint();
   const [currentUser, setCurrentUser] = useState(null);
   const [inspeksiAll, setInspeksiAll] = useState([]);
   const [loading,     setLoading]     = useState(true);
@@ -88,7 +91,11 @@ const P1Dashboard = ({ role, onNav, onLogout }) => {
   ];
 
   return (
-    <div style={{ minHeight: "100vh", background: theme.bg, paddingBottom: 80, display: "flex", flexDirection: "column" }}>
+    <div style={{
+      minHeight: "100vh", background: theme.bg, display: "flex", flexDirection: "column",
+      paddingBottom: isDesktop ? 0 : 80,
+      marginLeft: isDesktop ? SIDEBAR_WIDTH : 0,
+    }}>
       {/* Header */}
       <div style={{ background: theme.surface, padding: "48px 20px 20px", borderBottom: `1px solid ${theme.border}`, boxShadow: theme.shadow }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>

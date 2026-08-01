@@ -6,6 +6,8 @@ import Btn from "../components/Btn";
 import SectionLabel from "../components/SectionLabel";
 import theme from "../styles/theme";
 import { supabase } from "../lib/supabase";
+import { useBreakpoint } from "../hooks/useBreakpoint";
+import { SIDEBAR_WIDTH } from "../styles/layout";
 
 // ── CameraCaptureMini ─────────────────────────────────────────────────────────
 const CameraCaptureMini = ({ kategori, onPhotos }) => {
@@ -227,6 +229,7 @@ const TindakLanjutDetail = ({ inspeksi, kompartemenList, onBack, onSelesai }) =>
 
 // ── HSETindakLanjut — list inspeksi yang perlu ditindaklanjuti ────────────────
 const HSETindakLanjut = ({ onBack, onNav }) => {
+  const isDesktop = useBreakpoint();
   const [view,     setView]     = useState("list");
   const [selected, setSelected] = useState(null);
   const [kompList, setKompList] = useState([]);
@@ -307,7 +310,11 @@ const HSETindakLanjut = ({ onBack, onNav }) => {
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: theme.bg, paddingBottom: 80 }}>
+    <div style={{
+      minHeight: "100vh", background: theme.bg,
+      paddingBottom: isDesktop ? 0 : 80,
+      marginLeft: isDesktop ? SIDEBAR_WIDTH : 0,
+    }}>
       {/* Header */}
       <div style={{ background: theme.surface, padding: "48px 16px 16px", borderBottom: `1px solid ${theme.border}`, boxShadow: theme.shadow }}>
         <div onClick={() => onNav("dashboard")} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, cursor: "pointer", color: theme.textSub, fontSize: 13 }}>

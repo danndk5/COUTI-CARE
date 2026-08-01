@@ -9,7 +9,7 @@ import { supabase } from "../lib/supabase";
 import { formatDate, formatTime } from "../lib/dateHelper";
 import { getStatusFromInspeksi } from "../lib/inspeksiHelper";
 import { useBreakpoint } from "../hooks/useBreakpoint";
-import { DESKTOP_GRID_GAP } from "../styles/layout";
+import { DESKTOP_GRID_GAP, SIDEBAR_WIDTH } from "../styles/layout";
 
 const RiwayatScreen = ({ role, onNav, onOpenDetail }) => {
   const isDesktop = useBreakpoint();
@@ -89,7 +89,11 @@ const RiwayatScreen = ({ role, onNav, onOpenDetail }) => {
   });
 
   return (
-    <div style={{ minHeight: "100vh", background: theme.bg, paddingBottom: 80 }}>
+    <div style={{
+      minHeight: "100vh", background: theme.bg,
+      paddingBottom: isDesktop ? 0 : 80,
+      marginLeft: isDesktop ? SIDEBAR_WIDTH : 0,
+    }}>
       {/* Header */}
       <div
         style={{

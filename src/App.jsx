@@ -311,10 +311,6 @@ const App = () => {
     margin: isDesktop ? 0 : "0 auto",
   };
 
-  const innerStyle = isDesktop
-    ? { maxWidth: DESKTOP_CONTENT_MAX_WIDTH, margin: "0 auto", width: "100%" }
-    : undefined;
-
   if (loading) {
     return (
       <div style={{ ...containerStyle, display: "flex", justifyContent: "center", alignItems: "center" }}>
@@ -336,6 +332,20 @@ const App = () => {
     "detail-hse", "detail-p1",
   ];
   const safeScreen = knownScreens.includes(screen) ? screen : "login";
+
+  // Layar-layar berikut merender <BottomNav/> yang otomatis jadi sidebar kiri
+  // di desktop (lihat BottomNav.jsx). Untuk layar itu JANGAN dipusatkan lagi
+  // di sini — biarkan masing-masing screen mengatur marginLeft-nya sendiri,
+  // supaya tidak dobel dengan offset sidebar.
+  const sidebarScreens = ["dashboard", "history", "maintenance"];
+  if (safeScreen === "tindak-lanjut" && (isTeknisi(role) || isHSE(role))) {
+    sidebarScreens.push("tindak-lanjut"); // P1TindakLanjut tidak pakai BottomNav bersama, jadi dikecualikan
+  }
+  const hasSidebar = isDesktop && sidebarScreens.includes(safeScreen);
+
+  const innerStyle = isDesktop && !hasSidebar
+    ? { maxWidth: DESKTOP_CONTENT_MAX_WIDTH, margin: "0 auto", width: "100%" }
+    : undefined;
 
   return (
     <div style={containerStyle}>

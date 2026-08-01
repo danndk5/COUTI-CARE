@@ -128,6 +128,12 @@ const Icon = ({ name, size = 20, color = "currentColor" }) => {
         <circle cx="12" cy="12" r="3" />
       </svg>
     ),
+    alert: (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2">
+        <path d="M10.3 3.9 2.7 18a2 2 0 0 0 1.7 3h15.2a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" />
+        <path d="M12 9v4M12 17h.01" />
+      </svg>
+    ),
     chevron: (
       <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2">
         <polyline points="9,18 15,12 9,6" />

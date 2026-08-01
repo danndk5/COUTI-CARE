@@ -6,8 +6,11 @@ import Icon from "../components/Icon";
 import Input from "../components/Input";
 import SectionLabel from "../components/SectionLabel";
 import theme from "../styles/theme";
+import { useBreakpoint } from "../hooks/useBreakpoint";
+import { SIDEBAR_WIDTH } from "../styles/layout";
 
 const MaintenanceScreen = ({ role, onNav }) => {
+  const isDesktop = useBreakpoint();
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ plat: "", kerusakan: "", tanggal: "" });
   const setF = (k) => (v) => setForm((p) => ({ ...p, [k]: v }));
@@ -31,7 +34,11 @@ const MaintenanceScreen = ({ role, onNav }) => {
   ];
 
   return (
-    <div style={{ minHeight: "100vh", background: theme.bg, paddingBottom: 80 }}>
+    <div style={{
+      minHeight: "100vh", background: theme.bg,
+      paddingBottom: isDesktop ? 0 : 80,
+      marginLeft: isDesktop ? SIDEBAR_WIDTH : 0,
+    }}>
       {/* Header */}
       <div
         style={{

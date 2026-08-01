@@ -5,6 +5,8 @@ import Icon from "../components/Icon";
 import SectionLabel from "../components/SectionLabel";
 import theme from "../styles/theme";
 import { supabase } from "../lib/supabase";
+import { useBreakpoint } from "../hooks/useBreakpoint";
+import { SIDEBAR_WIDTH } from "../styles/layout";
 
 // ── Helper: cek apakah inspeksi punya item abnormal ─────────────────────────
 const hasAbnormal = (insp) => {
@@ -111,6 +113,7 @@ const InspeksiList = ({ title, items, onBack }) => (
 
 // ── DashboardScreen ───────────────────────────────────────────────────────────
 const DashboardScreen = ({ role, onNav, onLogout, onOpenDetail, onOpenTugas, initialTab, onOpenKategori }) => {
+  const isDesktop = useBreakpoint();
   const [view,        setView]        = useState("dashboard"); // "dashboard" | "list-all" | "list-perlu" | "list-selesai"
   const [currentUser, setCurrentUser] = useState(null);
   const [inspeksiAll, setInspeksiAll] = useState([]);
@@ -164,7 +167,11 @@ const DashboardScreen = ({ role, onNav, onLogout, onOpenDetail, onOpenTugas, ini
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: theme.bg, paddingBottom: 80 }}>
+    <div style={{
+      minHeight: "100vh", background: theme.bg,
+      paddingBottom: isDesktop ? 0 : 80,
+      marginLeft: isDesktop ? SIDEBAR_WIDTH : 0,
+    }}>
       {/* Header */}
       <div style={{
         background: theme.surface, padding: "48px 20px 20px",

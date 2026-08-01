@@ -5,6 +5,8 @@ import Icon from "../components/Icon";
 import SectionLabel from "../components/SectionLabel";
 import theme from "../styles/theme";
 import { supabase } from "../lib/supabase";
+import { useBreakpoint } from "../hooks/useBreakpoint";
+import { SIDEBAR_WIDTH } from "../styles/layout";
 
 // ── StatCard ─────────────────────────────────────────────────────────────────
 const StatCard = ({ value, label, bg, color, onClick }) => (
@@ -76,6 +78,7 @@ const InspeksiList = ({ title, items, onBack }) => (
 
 // ── HSEDashboard ──────────────────────────────────────────────────────────────
 const HSEDashboard = ({ role, onNav, onLogout }) => {
+  const isDesktop = useBreakpoint();
   const [view,        setView]        = useState("dashboard");
   const [currentUser, setCurrentUser] = useState(null);
   const [inspeksiAll, setInspeksiAll] = useState([]);
@@ -119,7 +122,11 @@ const HSEDashboard = ({ role, onNav, onLogout }) => {
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: theme.bg, paddingBottom: 80 }}>
+    <div style={{
+      minHeight: "100vh", background: theme.bg,
+      paddingBottom: isDesktop ? 0 : 80,
+      marginLeft: isDesktop ? SIDEBAR_WIDTH : 0,
+    }}>
       {/* Header */}
       <div style={{ background: theme.surface, padding: "48px 20px 20px", borderBottom: `1px solid ${theme.border}`, boxShadow: theme.shadow }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>

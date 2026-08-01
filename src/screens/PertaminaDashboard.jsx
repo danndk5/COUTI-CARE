@@ -16,13 +16,13 @@ import { formatDate, formatTime } from "../lib/dateHelper";
 import { getArmadaReminderList } from "../lib/reminderHelper";
 import { getGroupedKerusakan } from "../lib/kerusakanHelper";
 import { useBreakpoint } from "../hooks/useBreakpoint";
-import { DESKTOP_GRID_GAP } from "../styles/layout";
+import { DESKTOP_GRID_GAP, SIDEBAR_WIDTH } from "../styles/layout";
 
 // ── StatCard ──────────────────────────────────────────────────────────────────
-const StatCard = ({ value, label, color, bg, isDesktop, onClick }) => (
+const StatCard = ({ value, label, color, bg, icon, isDesktop, onClick }) => (
   <div onClick={onClick} style={{
     background: bg, borderRadius: 16,
-    padding: isDesktop ? "22px 16px" : "16px 12px",
+    padding: isDesktop ? "18px 16px" : "16px 12px",
     textAlign: "center", cursor: onClick ? "pointer" : "default",
     boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
     border: `1px solid ${color}22`,
@@ -31,7 +31,7 @@ const StatCard = ({ value, label, color, bg, isDesktop, onClick }) => (
   onMouseEnter={(e) => { if (onClick) { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 4px 10px rgba(0,0,0,0.08)"; } }}
   onMouseLeave={(e) => { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "0 1px 2px rgba(0,0,0,0.04)"; }}
   >
-    <div style={{ fontSize: isDesktop ? 28 : 22, fontWeight: 800, color }}>{value}</div>
+    <div style={{ fontSize: isDesktop ? 26 : 22, fontWeight: 800, color }}>{value}</div>
     <div style={{ fontSize: isDesktop ? 12 : 10, color, fontWeight: 600, marginTop: 2, opacity: 0.85 }}>
       {label}
     </div>
@@ -82,7 +82,7 @@ const SkeletonReportCard = () => (
   <Card style={{ marginBottom: 10, padding: "14px 16px" }}>
     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
       <SkeletonBox width={42} height={42} radius={12} />
-      <div style={{ flex: 1 }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
         <SkeletonBox height={13} width="45%" style={{ marginBottom: 8 }} />
         <SkeletonBox height={10} width="65%" style={{ marginBottom: 6 }} />
         <SkeletonBox height={10} width="35%" />
@@ -97,7 +97,7 @@ const SkeletonChartCard = () => (
     <SkeletonBox height={10} width="40%" style={{ marginBottom: 16 }} />
     <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
       <SkeletonBox width={120} height={120} radius={60} />
-      <div style={{ flex: 1 }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
         <SkeletonBox height={12} width="90%" style={{ marginBottom: 10 }} />
         <SkeletonBox height={12} width="70%" />
       </div>
@@ -154,7 +154,7 @@ const TAB_LIST = [
   { key: "p1",     label: "Cek Random P1" },
 ];
 
-const TabBar = ({ active, onChange }) => (
+const TabBar = ({ active, onChange, counts = {} }) => (
   <div style={{
     display: "flex", borderBottom: `2px solid ${theme.border}`,
     background: theme.surface, paddingLeft: 16, paddingRight: 16,
@@ -169,6 +169,15 @@ const TabBar = ({ active, onChange }) => (
         letterSpacing: "0.1px",
       }}>
         {t.label}
+        {counts[t.key] != null && (
+          <span style={{
+            marginLeft: 6, fontSize: 10.5, fontWeight: 700, padding: "1px 7px", borderRadius: 10,
+            background: active === t.key ? theme.primaryLight : theme.surfaceAlt,
+            color: active === t.key ? theme.primary : theme.textMuted,
+          }}>
+            {counts[t.key]}
+          </span>
+        )}
       </div>
     ))}
   </div>
@@ -184,7 +193,7 @@ const HEALTH_CATEGORY_COLORS = {
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB 1: GPS & CCTV (konten lama, tidak diubah)
 // ─────────────────────────────────────────────────────────────────────────────
-const TabGPS = ({ onOpenDetail, onOpenKategori, isDesktop }) => {
+const TabGPS = ({ onOpenDetail, onOpenKategori, isDesktop, onCountChange }) => {
   const [inspeksiList, setInspeksiList] = useState([]);
   const [stats, setStats] = useState({ total: 0, normal: 0, abnormal: 0, selesai: 0 });
   const [loading, setLoading] = useState(true);
@@ -227,6 +236,7 @@ const TabGPS = ({ onOpenDetail, onOpenKategori, isDesktop }) => {
         abnormal: withStatus.filter((i) => i.overallStatus === "Abnormal").length,
         selesai: withStatus.filter((i) => i.status === "selesai").length,
       });
+      onCountChange?.(withStatus.length);
     } catch (err) {
       console.error("Error loading GPS & CCTV data:", err);
       setError(err.message || "Terjadi kesalahan saat memuat data.");
@@ -302,7 +312,7 @@ const TabGPS = ({ onOpenDetail, onOpenKategori, isDesktop }) => {
                   </PieChart>
                 </ResponsiveContainer>
               </div>
-              <div style={{ flex: 1 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
                 {pieData.map((d) => (
                   <div key={d.name} onClick={() => onOpenKategori?.("health", d.name)}
                     style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, cursor: "pointer" }}>
@@ -359,7 +369,7 @@ const TabGPS = ({ onOpenDetail, onOpenKategori, isDesktop }) => {
 
       <SectionLabel>Daftar Laporan GPS & CCTV</SectionLabel>
       {filteredList.length > 0 ? (
-        <div style={{ display: "grid", gridTemplateColumns: isDesktop ? "repeat(3, 1fr)" : "1fr", gap: isDesktop ? DESKTOP_GRID_GAP : 0 }}>
+        <div style={{ display: "grid", gridTemplateColumns: isDesktop ? "repeat(auto-fill, minmax(300px, 1fr))" : "1fr", gap: isDesktop ? DESKTOP_GRID_GAP : 0 }}>
           {filteredList.map((item) => (
             <Card key={item.id} style={{ 
               marginBottom: isDesktop ? 0 : 10, padding: "14px 16px",
@@ -375,8 +385,8 @@ const TabGPS = ({ onOpenDetail, onOpenKategori, isDesktop }) => {
                   }}>
                     <Icon name="car" size={18} color={item.overallStatus === "Abnormal" ? theme.danger : theme.success} />
                   </div>
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: 14, color: theme.text }}>{item.nomor_polisi}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: theme.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.nomor_polisi}</div>
                     <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 1 }}>
                       {item.nama_armada} · {item.perusahaan_transportir}
                     </div>
@@ -385,7 +395,7 @@ const TabGPS = ({ onOpenDetail, onOpenKategori, isDesktop }) => {
                     </div>
                   </div>
                 </div>
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6, flexShrink: 0 }}>
                   <Badge status={item.overallStatus} />
                   <HealthMiniBar value={item.health.overall} color={HEALTH_CATEGORY_COLORS[item.healthCategory]} />
                 </div>
@@ -416,7 +426,7 @@ const TabGPS = ({ onOpenDetail, onOpenKategori, isDesktop }) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB 2: Uji Kedap MT (data dari inspeksi_hse, semua akun HSE)
 // ─────────────────────────────────────────────────────────────────────────────
-const TabHSE = ({ isDesktop, onOpenDetail }) => {
+const TabHSE = ({ isDesktop, onOpenDetail, onCountChange }) => {
   const [list, setList]       = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState(null);
@@ -433,6 +443,7 @@ const TabHSE = ({ isDesktop, onOpenDetail }) => {
         .order("created_at", { ascending: false });
       if (fetchError) throw fetchError;
       setList(data || []);
+      onCountChange?.((data || []).length);
     } catch (err) {
       console.error("Error loading Uji Kedap MT data:", err);
       setError(err.message || "Terjadi kesalahan saat memuat data.");
@@ -538,7 +549,7 @@ const TabHSE = ({ isDesktop, onOpenDetail }) => {
                   </PieChart>
                 </ResponsiveContainer>
               </div>
-              <div style={{ flex: 1 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
                 {pieData.map((d) => (
                   <div key={d.name} onClick={() => handlePieClick(d)}
                     style={{
@@ -622,7 +633,7 @@ const TabHSE = ({ isDesktop, onOpenDetail }) => {
       </div>
 
       {filteredList.length > 0 ? (
-        <div style={{ display: "grid", gridTemplateColumns: isDesktop ? "repeat(3, 1fr)" : "1fr", gap: isDesktop ? DESKTOP_GRID_GAP : 0 }}>
+        <div style={{ display: "grid", gridTemplateColumns: isDesktop ? "repeat(auto-fill, minmax(300px, 1fr))" : "1fr", gap: isDesktop ? DESKTOP_GRID_GAP : 0 }}>
           {filteredList.map((item) => (
             <Card
               key={item.id}
@@ -633,8 +644,8 @@ const TabHSE = ({ isDesktop, onOpenDetail }) => {
                 <div style={{ width: 42, height: 42, borderRadius: 12, background: "#FEF3C7", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                   <Icon name="car" size={18} color="#D97706" />
                 </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 700, fontSize: 14, color: theme.text }}>{item.nomor_polisi}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: theme.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.nomor_polisi}</div>
                   <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 1 }}>{item.transportir}</div>
                   <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 1 }}>
                     {item.kapasitas_mt} · {item.jumlah_kompartemen} kompartemen · {item.kategori_mt === "merah_putih" ? "MT Merah Putih" : "MT Industri"}
@@ -670,7 +681,7 @@ const TabHSE = ({ isDesktop, onOpenDetail }) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB 3: Cek Random P1 (data dari inspeksi_p1, semua akun P1)
 // ─────────────────────────────────────────────────────────────────────────────
-const TabP1 = ({ isDesktop, onOpenDetail }) => {
+const TabP1 = ({ isDesktop, onOpenDetail, onCountChange }) => {
   const [list, setList]       = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState(null);
@@ -686,6 +697,7 @@ const TabP1 = ({ isDesktop, onOpenDetail }) => {
         .order("created_at", { ascending: false });
       if (fetchError) throw fetchError;
       setList(data || []);
+      onCountChange?.((data || []).length);
     } catch (err) {
       console.error("Error loading Cek Random P1 data:", err);
       setError(err.message || "Terjadi kesalahan saat memuat data.");
@@ -763,7 +775,7 @@ const TabP1 = ({ isDesktop, onOpenDetail }) => {
                   </PieChart>
                 </ResponsiveContainer>
               </div>
-              <div style={{ flex: 1 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
                 {pieData.map((d) => (
                   <div key={d.name} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
                     <div style={{ width: 10, height: 10, borderRadius: "50%", background: d.color }} />
@@ -815,7 +827,7 @@ const TabP1 = ({ isDesktop, onOpenDetail }) => {
 
       <SectionLabel>Daftar Laporan Cek Random P1</SectionLabel>
       {filteredList.length > 0 ? (
-        <div style={{ display: "grid", gridTemplateColumns: isDesktop ? "repeat(3, 1fr)" : "1fr", gap: isDesktop ? DESKTOP_GRID_GAP : 0 }}>
+        <div style={{ display: "grid", gridTemplateColumns: isDesktop ? "repeat(auto-fill, minmax(300px, 1fr))" : "1fr", gap: isDesktop ? DESKTOP_GRID_GAP : 0 }}>
           {filteredList.map((item) => {
             const temuanCount = item.inspeksi_p1_temuan?.length || 0;
             return (
@@ -828,8 +840,8 @@ const TabP1 = ({ isDesktop, onOpenDetail }) => {
                   <div style={{ width: 42, height: 42, borderRadius: 12, background: "#EDE9FE", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                     <Icon name="car" size={18} color="#7C3AED" />
                   </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 700, fontSize: 14, color: theme.text }}>{item.nomor_polisi}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: theme.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.nomor_polisi}</div>
                     <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 1 }}>
                       {item.transportir}
                     </div>
@@ -883,16 +895,25 @@ const TabP1 = ({ isDesktop, onOpenDetail }) => {
 // MAIN: PertaminaDashboard
 // ─────────────────────────────────────────────────────────────────────────────
 const PertaminaDashboard = ({ onNav, onLogout, onOpenDetail, onOpenKategori, onOpenDetailHSE, onOpenDetailP1, activeTab, onChangeTab }) => {
+  const [tabCounts, setTabCounts] = useState({ gps: null, hse: null, p1: null });
   const isDesktop = useBreakpoint();
 
   return (
-    <div style={{ minHeight: "100vh", background: theme.bg, paddingBottom: 80 }}>
+    <div style={{
+      minHeight: "100vh", background: theme.bg,
+      paddingBottom: isDesktop ? 0 : 80,
+      marginLeft: isDesktop ? SIDEBAR_WIDTH : 0,
+    }}>
       <style>{`
         @keyframes skeletonPulse { 0% { opacity: 0.55; } 50% { opacity: 1; } 100% { opacity: 0.55; } }
         .skeleton-pulse { animation: skeletonPulse 1.4s ease-in-out infinite; }
       `}</style>
       {/* Header */}
-      <div style={{ background: theme.surface, padding: "48px 20px 0", borderBottom: `1px solid ${theme.border}`, boxShadow: theme.shadow }}>
+      <div style={{
+        background: theme.surface, padding: isDesktop ? "24px 32px 0" : "48px 20px 0",
+        borderBottom: `1px solid ${theme.border}`, boxShadow: theme.shadow,
+        position: "sticky", top: 0, zIndex: 20,
+      }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <div>
             <div style={{ fontSize: 13, color: theme.textMuted }}>Selamat datang,</div>
@@ -901,12 +922,26 @@ const PertaminaDashboard = ({ onNav, onLogout, onOpenDetail, onOpenKategori, onO
               Depot · Monitor & Audit
             </div>
           </div>
-          <div onClick={onLogout} style={{ cursor: "pointer", padding: 10, borderRadius: 12, background: theme.surfaceAlt }}>
-            <Icon name="logout" size={18} color={theme.textSub} />
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {isDesktop && (
+              <>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 14px", borderRadius: 10, border: `1px solid ${theme.border}`, background: theme.surface, color: theme.textMuted, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>
+                  <Icon name="search" size={14} color={theme.textMuted} />
+                  Filter
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 14px", borderRadius: 10, border: `1px solid ${theme.border}`, background: theme.surface, color: theme.textMuted, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>
+                  <Icon name="plus" size={14} color={theme.textMuted} />
+                  Export
+                </div>
+              </>
+            )}
+            <div onClick={onLogout} style={{ cursor: "pointer", padding: 10, borderRadius: 12, background: theme.surfaceAlt }}>
+              <Icon name="logout" size={18} color={theme.textSub} />
+            </div>
           </div>
         </div>
 
-        <TabBar active={activeTab} onChange={onChangeTab} />
+        <TabBar active={activeTab} onChange={onChangeTab} counts={tabCounts} />
       </div>
 
       {/* Tab Content */}
@@ -915,10 +950,23 @@ const PertaminaDashboard = ({ onNav, onLogout, onOpenDetail, onOpenKategori, onO
           onOpenDetail={onOpenDetail}
           onOpenKategori={onOpenKategori}
           isDesktop={isDesktop}
+          onCountChange={(n) => setTabCounts((p) => ({ ...p, gps: n }))}
         />
       )}
-      {activeTab === "hse" && <TabHSE isDesktop={isDesktop} onOpenDetail={onOpenDetailHSE} />}
-      {activeTab === "p1"  && <TabP1  isDesktop={isDesktop} onOpenDetail={onOpenDetailP1} />}
+      {activeTab === "hse" && (
+        <TabHSE
+          isDesktop={isDesktop}
+          onOpenDetail={onOpenDetailHSE}
+          onCountChange={(n) => setTabCounts((p) => ({ ...p, hse: n }))}
+        />
+      )}
+      {activeTab === "p1" && (
+        <TabP1
+          isDesktop={isDesktop}
+          onOpenDetail={onOpenDetailP1}
+          onCountChange={(n) => setTabCounts((p) => ({ ...p, p1: n }))}
+        />
+      )}
 
       <BottomNav active="home" onNav={onNav} role="pertamina" />
     </div>
