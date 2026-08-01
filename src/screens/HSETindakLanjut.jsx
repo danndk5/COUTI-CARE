@@ -55,14 +55,17 @@ const CameraCaptureMini = ({ kategori, onPhotos }) => {
       {photos.length > 0 && (
         <div style={{ marginTop: 8 }}>
           {photos.map((p) => (
-            <div key={p.path} style={{
-              display: "flex", alignItems: "center", justifyContent: "space-between",
-              padding: "6px 10px", background: theme.primaryLight, borderRadius: 8,
-              marginBottom: 6, fontSize: 11, color: theme.primary,
-            }}>
-              <span>✓ {p.name}</span>
-              <div onClick={() => removePhoto(p.path)}
-                style={{ cursor: "pointer", fontWeight: 700, color: theme.danger }}>✕</div>
+            <div key={p.path} style={{ marginBottom: 8 }}>
+              <img src={p.url} alt="bukti perbaikan"
+                style={{ width: "100%", maxHeight: 180, objectFit: "cover", borderRadius: 8, marginBottom: 4 }} />
+              <div style={{
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+                padding: "6px 10px", background: theme.primaryLight, borderRadius: 8, fontSize: 11, color: theme.primary,
+              }}>
+                <span>✓ {p.name}</span>
+                <div onClick={() => removePhoto(p.path)}
+                  style={{ cursor: "pointer", fontWeight: 700, color: theme.danger }}>✕</div>
+              </div>
             </div>
           ))}
         </div>
@@ -72,24 +75,20 @@ const CameraCaptureMini = ({ kategori, onPhotos }) => {
 };
 
 // ── TindakLanjutDetail HSE ────────────────────────────────────────────────────
-const TindakLanjutDetail = ({ inspeksi, kompartemenList, onBack, onSelesai }) => {
-  const tidakKedapList = kompartemenList.filter((k) => k.status === "tidak_kedap");
-  const [catatanMap, setCatatanMap] = useState({});
-  const [photosMap,  setPhotosMap]  = useState({});
+// Sekarang tindak lanjut per KENDARAAN (bukan per kompartemen).
+// fotoTemuan = foto-foto temuan yang diambil saat pengecekan awal (read-only, dengan keterangan).
+const TindakLanjutDetail = ({ inspeksi, fotoTemuan, onBack, onSelesai }) => {
+  const [catatan,    setCatatan]    = useState("");
+  const [buktiFoto,  setBuktiFoto]  = useState([]);
   const [errors,     setErrors]     = useState({});
   const [submitting, setSubmitting] = useState(false);
 
-  const setFieldPhotos = (field) => (updater) =>
-    setPhotosMap((p) => ({ ...p, [field]: typeof updater === "function" ? updater(p[field] || []) : updater }));
-
   const handleSubmit = async () => {
     const e = {};
-    tidakKedapList.forEach((k) => {
-      if (!catatanMap[k.id]?.trim()) e[k.id] = true;
-    });
+    if (!catatan.trim()) e.catatan = true;
     setErrors(e);
     if (Object.keys(e).length > 0) {
-      alert("Semua kompartemen tidak kedap wajib diisi keterangan tindak lanjutnya.");
+      alert("Keterangan tindak lanjut wajib diisi.");
       return;
     }
 
@@ -97,31 +96,27 @@ const TindakLanjutDetail = ({ inspeksi, kompartemenList, onBack, onSelesai }) =>
     try {
       const { data: { user } } = await supabase.auth.getUser();
 
-      // Simpan tindak lanjut per kompartemen
-      const rows = tidakKedapList.map((k) => ({
+      // Simpan 1 catatan tindak lanjut untuk kendaraan ini
+      const { error: tlErr } = await supabase.from("tindaklanjut_hse").insert([{
         inspeksi_hse_id: inspeksi.id,
         user_id:         user.id,
-        kompartemen_no:  k.nomor,
-        catatan:         catatanMap[k.id] || "",
+        catatan:         catatan.trim(),
         status:          "selesai",
-      }));
-
-      const { error: tlErr } = await supabase.from("tindaklanjut_hse").insert(rows);
+      }]);
       if (tlErr) throw tlErr;
 
-      // Simpan foto
-      const allPhotos = Object.values(photosMap).flat();
-      if (allPhotos.length > 0) {
-        // Simpan ke foto_inspeksi_hse dengan referensi inspeksi
+      // Simpan foto bukti perbaikan
+      if (buktiFoto.length > 0) {
         await supabase.from("foto_inspeksi_hse").insert(
-          allPhotos.map((p) => ({
+          buktiFoto.map((p) => ({
             inspeksi_hse_id: inspeksi.id,
             url:             p.url,
+            keterangan:      "Bukti perbaikan",
           }))
         );
       }
 
-      // Update status inspeksi_hse jadi selesai
+      // Update status inspeksi jadi selesai
       await supabase.from("inspeksi_hse").update({ status: "selesai" }).eq("id", inspeksi.id);
 
       alert("✅ Tindak lanjut berhasil disimpan!");
@@ -153,64 +148,55 @@ const TindakLanjutDetail = ({ inspeksi, kompartemenList, onBack, onSelesai }) =>
           {" · "}{new Date(inspeksi.created_at).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}
         </div>
 
-        <SectionLabel>Kompartemen Tidak Kedap ({tidakKedapList.length})</SectionLabel>
+        <SectionLabel>Temuan Uji Kedap ({fotoTemuan.length} foto)</SectionLabel>
 
-        {tidakKedapList.length === 0 ? (
-          <Card style={{ padding: 20, textAlign: "center" }}>
-            <div style={{ fontSize: 13, color: theme.textMuted }}>Semua kompartemen kedap ✅</div>
+        {fotoTemuan.length === 0 ? (
+          <Card style={{ padding: 20, textAlign: "center", marginBottom: 20 }}>
+            <div style={{ fontSize: 13, color: theme.textMuted }}>Tidak ada foto temuan tercatat</div>
           </Card>
         ) : (
-          tidakKedapList.map((k) => (
-            <div key={k.id} style={{
-              marginBottom: 16, padding: 14, borderRadius: 14,
-              background: theme.surface, border: `1.5px solid ${theme.danger}`,
-            }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                <div style={{ fontWeight: 700, fontSize: 15, color: theme.text }}>
-                  Kompartemen {k.nomor}
-                </div>
-                <div style={{ fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 20, background: theme.dangerLight, color: theme.danger }}>
-                  Tidak Kedap
+          <div style={{ marginBottom: 20 }}>
+            {fotoTemuan.map((f) => (
+              <div key={f.id} style={{
+                marginBottom: 12, padding: 12, borderRadius: 12,
+                background: theme.surface, border: `1.5px solid ${theme.danger}`,
+              }}>
+                <img src={f.url} alt="temuan"
+                  style={{ width: "100%", maxHeight: 220, objectFit: "cover", borderRadius: 8, marginBottom: 8 }} />
+                <div style={{ fontSize: 12, color: theme.textSub, background: theme.surfaceAlt, padding: "8px 10px", borderRadius: 8, fontStyle: "italic" }}>
+                  Temuan: "{f.keterangan}"
                 </div>
               </div>
-
-              {/* Keterangan dari pengecekan */}
-              {k.keterangan && (
-                <div style={{ fontSize: 12, color: theme.textSub, background: theme.surfaceAlt, padding: "8px 10px", borderRadius: 8, marginBottom: 10, fontStyle: "italic" }}>
-                  Temuan: "{k.keterangan}"
-                </div>
-              )}
-
-              {/* Input tindak lanjut */}
-              <div style={{ fontSize: 12, fontWeight: 600, color: theme.text, marginBottom: 6 }}>
-                Tindak Lanjut yang Dilakukan:
-              </div>
-              <textarea
-                placeholder="Jelaskan tindakan yang sudah dilakukan..."
-                value={catatanMap[k.id] || ""}
-                onChange={(e) => setCatatanMap((p) => ({ ...p, [k.id]: e.target.value }))}
-                style={{
-                  width: "100%", padding: "10px 12px", borderRadius: 10,
-                  border: `1.5px solid ${errors[k.id] ? theme.danger : theme.border}`,
-                  background: errors[k.id] ? theme.dangerLight : theme.surfaceAlt,
-                  color: theme.text, fontSize: 13,
-                  fontFamily: "'DM Sans', sans-serif",
-                  resize: "none", minHeight: 80, boxSizing: "border-box", outline: "none",
-                }}
-              />
-              {errors[k.id] && (
-                <div style={{ fontSize: 12, color: theme.danger, fontWeight: 600, marginTop: 4 }}>
-                  ⚠️ Keterangan tindak lanjut wajib diisi.
-                </div>
-              )}
-
-              <CameraCaptureMini
-                kategori={`komp_${k.nomor}`}
-                onPhotos={setFieldPhotos(k.id)}
-              />
-            </div>
-          ))
+            ))}
+          </div>
         )}
+
+        {/* Input tindak lanjut */}
+        <div style={{ padding: 14, borderRadius: 14, background: theme.surface, border: `1.5px solid ${theme.border}` }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: theme.text, marginBottom: 8 }}>
+            Tindak Lanjut yang Dilakukan
+          </div>
+          <textarea
+            placeholder="Jelaskan tindakan perbaikan yang sudah dilakukan..."
+            value={catatan}
+            onChange={(e) => setCatatan(e.target.value)}
+            style={{
+              width: "100%", padding: "10px 12px", borderRadius: 10,
+              border: `1.5px solid ${errors.catatan ? theme.danger : theme.border}`,
+              background: errors.catatan ? theme.dangerLight : theme.surfaceAlt,
+              color: theme.text, fontSize: 13,
+              fontFamily: "'DM Sans', sans-serif",
+              resize: "none", minHeight: 90, boxSizing: "border-box", outline: "none",
+            }}
+          />
+          {errors.catatan && (
+            <div style={{ fontSize: 12, color: theme.danger, fontWeight: 600, marginTop: 4 }}>
+              ⚠️ Keterangan tindak lanjut wajib diisi.
+            </div>
+          )}
+
+          <CameraCaptureMini kategori={inspeksi.nomor_polisi} onPhotos={setBuktiFoto} />
+        </div>
       </div>
 
       <div style={{
@@ -218,8 +204,7 @@ const TindakLanjutDetail = ({ inspeksi, kompartemenList, onBack, onSelesai }) =>
         width: "100%", maxWidth: 430, padding: "12px 16px",
         background: theme.surface, borderTop: `1px solid ${theme.border}`,
       }}>
-        <Btn onClick={handleSubmit} variant="primary" icon="check"
-          disabled={submitting || tidakKedapList.length === 0}>
+        <Btn onClick={handleSubmit} variant="primary" icon="check" disabled={submitting}>
           {submitting ? "Menyimpan..." : "Simpan Tindak Lanjut"}
         </Btn>
       </div>
@@ -230,12 +215,12 @@ const TindakLanjutDetail = ({ inspeksi, kompartemenList, onBack, onSelesai }) =>
 // ── HSETindakLanjut — list inspeksi yang perlu ditindaklanjuti ────────────────
 const HSETindakLanjut = ({ onBack, onNav }) => {
   const isDesktop = useBreakpoint();
-  const [view,     setView]     = useState("list");
-  const [selected, setSelected] = useState(null);
-  const [kompList, setKompList] = useState([]);
-  const [list,     setList]     = useState([]);
-  const [loading,  setLoading]  = useState(true);
-  const [role,     setRole]     = useState(null);
+  const [view,       setView]       = useState("list");
+  const [selected,   setSelected]   = useState(null);
+  const [fotoTemuan, setFotoTemuan] = useState([]);
+  const [list,       setList]       = useState([]);
+  const [loading,    setLoading]    = useState(true);
+  const [role,       setRole]       = useState(null);
 
   useEffect(() => {
     const loadData = async () => {
@@ -246,31 +231,18 @@ const HSETindakLanjut = ({ onBack, onNav }) => {
       const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
       setRole(profile?.role);
 
-      // Ambil inspeksi HSE milik user yang belum selesai
+      // Kendaraan yang GAGAL uji kedap dan belum ditindaklanjuti
       const { data: inspeksiData, error } = await supabase
         .from("inspeksi_hse")
         .select("*")
         .eq("user_id", user.id)
         .eq("is_submitted", true)
-        .neq("status", "selesai")
+        .eq("status", "tidak_lulus")
         .order("created_at", { ascending: false });
 
       if (error) console.error("Error load inspeksi_hse:", error);
 
-      // Untuk setiap inspeksi, ambil kompartemen yang tidak kedap
-      const enriched = await Promise.all(
-        (inspeksiData || []).map(async (insp) => {
-          const { data: kompData } = await supabase
-            .from("inspeksi_hse_kompartemen")
-            .select("*")
-            .eq("inspeksi_hse_id", insp.id)
-            .eq("status", "tidak_kedap");
-          return { ...insp, _tidakKedapCount: (kompData || []).length };
-        })
-      );
-
-      // Filter hanya yang punya kompartemen tidak kedap
-      setList(enriched.filter((i) => i._tidakKedapCount > 0));
+      setList(inspeksiData || []);
       setLoading(false);
     };
 
@@ -278,31 +250,31 @@ const HSETindakLanjut = ({ onBack, onNav }) => {
   }, []);
 
   const handlePilih = async (insp) => {
-    // Load kompartemen tidak kedap
-    const { data: kompData } = await supabase
-      .from("inspeksi_hse_kompartemen")
+    // Ambil foto temuan (dari pengecekan awal, bukan bukti perbaikan)
+    const { data: fotoData } = await supabase
+      .from("foto_inspeksi_hse")
       .select("*")
       .eq("inspeksi_hse_id", insp.id)
-      .eq("status", "tidak_kedap")
-      .order("nomor");
+      .neq("keterangan", "Bukti perbaikan")
+      .order("created_at", { ascending: true });
 
     setSelected(insp);
-    setKompList(kompData || []);
+    setFotoTemuan(fotoData || []);
     setView("detail");
   };
 
   const handleSelesai = () => {
     setView("list");
-    setSelected(null);
-    setKompList([]);
     setList((p) => p.filter((i) => i.id !== selected.id));
+    setSelected(null);
+    setFotoTemuan([]);
   };
 
   if (view === "detail" && selected) {
     return (
       <TindakLanjutDetail
         inspeksi={selected}
-        kompartemenList={kompList}
+        fotoTemuan={fotoTemuan}
         onBack={() => setView("list")}
         onSelesai={handleSelesai}
       />
@@ -334,7 +306,7 @@ const HSETindakLanjut = ({ onBack, onNav }) => {
               Semua sudah ditindaklanjuti
             </div>
             <div style={{ fontSize: 13, color: theme.textMuted }}>
-              Tidak ada kompartemen tidak kedap yang menunggu tindak lanjut
+              Tidak ada kendaraan tidak lulus yang menunggu tindak lanjut
             </div>
           </Card>
         ) : (
@@ -367,7 +339,7 @@ const HSETindakLanjut = ({ onBack, onNav }) => {
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
                     <div style={{ fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 20, background: theme.dangerLight, color: theme.danger }}>
-                      {insp._tidakKedapCount} tidak kedap
+                      Tidak Lulus
                     </div>
                     <Icon name="chevron" size={14} color={theme.textMuted} />
                   </div>

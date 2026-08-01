@@ -8,6 +8,14 @@ import { supabase } from "../lib/supabase";
 import { useBreakpoint } from "../hooks/useBreakpoint";
 import { SIDEBAR_WIDTH } from "../styles/layout";
 
+// ── Helper: label & warna status ──────────────────────────────────────────────
+const statusInfo = (status) => {
+  if (status === "tidak_lulus") return { label: "Perlu Tindak Lanjut", bg: theme.dangerLight,  color: theme.danger };
+  if (status === "selesai")     return { label: "Selesai",             bg: theme.successLight, color: theme.success };
+  if (status === "lulus")       return { label: "Lulus",               bg: theme.successLight, color: theme.success };
+  return { label: status || "-", bg: theme.surfaceAlt, color: theme.textMuted };
+};
+
 // ── StatCard ─────────────────────────────────────────────────────────────────
 const StatCard = ({ value, label, bg, color, onClick }) => (
   <div
@@ -42,35 +50,37 @@ const InspeksiList = ({ title, items, onBack }) => (
           <div style={{ fontSize: 14, color: theme.textMuted }}>Belum ada data</div>
         </Card>
       ) : (
-        items.map((insp) => (
-          <Card key={insp.id} style={{ marginBottom: 12, padding: "14px 16px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <div style={{
-                width: 44, height: 44, borderRadius: 12, background: theme.primaryLight,
-                display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-              }}>
-                <Icon name="car" size={20} color={theme.primary} />
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 700, fontSize: 15, color: theme.text }}>{insp.nomor_polisi}</div>
-                <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>{insp.transportir}</div>
-                <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 1 }}>
-                  {insp.kapasitas_mt} · {insp.jumlah_kompartemen} kompartemen · {insp.kategori_mt === "merah_putih" ? "MT Merah Putih" : "MT Industri"}
+        items.map((insp) => {
+          const si = statusInfo(insp.status);
+          return (
+            <Card key={insp.id} style={{ marginBottom: 12, padding: "14px 16px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{
+                  width: 44, height: 44, borderRadius: 12, background: theme.primaryLight,
+                  display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                }}>
+                  <Icon name="car" size={20} color={theme.primary} />
                 </div>
-                <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 1 }}>
-                  {new Date(insp.created_at).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 700, fontSize: 15, color: theme.text }}>{insp.nomor_polisi}</div>
+                  <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>{insp.transportir}</div>
+                  <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 1 }}>
+                    {insp.kapasitas_mt} · {insp.jumlah_kompartemen} kompartemen · {insp.kategori_mt === "merah_putih" ? "MT Merah Putih" : "MT Industri"}
+                  </div>
+                  <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 1 }}>
+                    {new Date(insp.created_at).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}
+                  </div>
+                </div>
+                <div style={{
+                  fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 20,
+                  background: si.bg, color: si.color,
+                }}>
+                  {si.label}
                 </div>
               </div>
-              <div style={{
-                fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 20,
-                background: insp.status === "selesai" ? theme.successLight : theme.dangerLight,
-                color: insp.status === "selesai" ? theme.success : theme.danger,
-              }}>
-                {insp.status === "selesai" ? "Selesai" : "Perlu Tindak Lanjut"}
-              </div>
-            </div>
-          </Card>
-        ))
+            </Card>
+          );
+        })
       )}
     </div>
   </div>
@@ -106,12 +116,14 @@ const HSEDashboard = ({ role, onNav, onLogout }) => {
     loadData();
   }, []);
 
-  const perluTindak  = inspeksiAll.filter((i) => i.status !== "selesai");
-  const sudahTindak  = inspeksiAll.filter((i) => i.status === "selesai");
+  // Status yang tersimpan sekarang: "lulus" | "tidak_lulus" | "selesai"
+  // "selesai" artinya tidak_lulus yang sudah ditindaklanjuti
+  const perluTindak = inspeksiAll.filter((i) => i.status === "tidak_lulus");
+  const sudahBeres  = inspeksiAll.filter((i) => i.status === "lulus" || i.status === "selesai");
 
-  if (view === "list-all")    return <InspeksiList title="Total Diperiksa"         items={inspeksiAll} onBack={() => setView("dashboard")} />;
-  if (view === "list-perlu")  return <InspeksiList title="Perlu Ditindaklanjuti"   items={perluTindak} onBack={() => setView("dashboard")} />;
-  if (view === "list-selesai") return <InspeksiList title="Sudah Ditindaklanjuti"  items={sudahTindak} onBack={() => setView("dashboard")} />;
+  if (view === "list-all")     return <InspeksiList title="Total Diperiksa"        items={inspeksiAll} onBack={() => setView("dashboard")} />;
+  if (view === "list-perlu")   return <InspeksiList title="Perlu Ditindaklanjuti"   items={perluTindak} onBack={() => setView("dashboard")} />;
+  if (view === "list-selesai") return <InspeksiList title="Sudah Ditindaklanjuti"   items={sudahBeres}  onBack={() => setView("dashboard")} />;
 
   if (loading) {
     return (
@@ -146,9 +158,9 @@ const HSEDashboard = ({ role, onNav, onLogout }) => {
       <div style={{ padding: "24px 16px" }}>
         <SectionLabel>Ringkasan Uji Kedap</SectionLabel>
         <div style={{ display: "flex", gap: 10, marginBottom: 28 }}>
-          <StatCard value={inspeksiAll.length} label={"Total\nDiperiksa"}         bg={theme.primaryLight} color={theme.primary}  onClick={() => setView("list-all")} />
-          <StatCard value={perluTindak.length}  label={"Perlu\nDitindaklanjuti"}  bg={theme.dangerLight}  color={theme.danger}   onClick={() => setView("list-perlu")} />
-          <StatCard value={sudahTindak.length}  label={"Sudah\nDitindaklanjuti"}  bg={theme.successLight} color={theme.success}  onClick={() => setView("list-selesai")} />
+          <StatCard value={inspeksiAll.length}  label={"Total\nDiperiksa"}         bg={theme.primaryLight} color={theme.primary}  onClick={() => setView("list-all")} />
+          <StatCard value={perluTindak.length}  label={"Perlu\nDitindaklanjuti"}   bg={theme.dangerLight}  color={theme.danger}   onClick={() => setView("list-perlu")} />
+          <StatCard value={sudahBeres.length}   label={"Sudah\nDitindaklanjuti"}   bg={theme.successLight} color={theme.success}  onClick={() => setView("list-selesai")} />
         </div>
 
         <div style={{ padding: "14px 16px", borderRadius: 14, background: theme.surface, border: `1px solid ${theme.border}`, fontSize: 13, color: theme.textMuted, lineHeight: 1.6 }}>
