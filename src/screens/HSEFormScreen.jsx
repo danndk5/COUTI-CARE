@@ -71,35 +71,6 @@ const formatServerTime = (date) => {
   return `${hari}, ${date.getDate()} ${bulan} ${date.getFullYear()} ${hh}:${mm}:${ss}`;
 };
 
-// ── Timer uji kedap (checkpoint berikutnya baru bisa diisi 5 menit kemudian) ──
-const CHECKPOINT_INTERVAL_MS = 5 * 60 * 1000;
-
-const formatCountdown = (ms) => {
-  const totalSec = Math.max(0, Math.ceil(ms / 1000));
-  const mm = String(Math.floor(totalSec / 60)).padStart(2, "0");
-  const ss = String(totalSec % 60).padStart(2, "0");
-  return `${mm}:${ss}`;
-};
-
-const playBeep = () => {
-  try {
-    const Ctx = window.AudioContext || window.webkitAudioContext;
-    if (!Ctx) return;
-    const ctx = new Ctx();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = "sine";
-    osc.frequency.value = 880;
-    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.3, ctx.currentTime + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.6);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.6);
-  } catch {}
-};
-
 // ── applyOverlay (shared) ─────────────────────────────────────────────────────
 // cachedPos: hasil getCurrentPosition yang sudah diambil sebelumnya (saat cek izin),
 // dipakai lagi di sini supaya GPS tidak di-fetch dua kali (yang bikin proses lama).
@@ -113,11 +84,9 @@ const applyOverlay = async (file, cachedPos) => {
   const pos = cachedPos || await new Promise((res, rej) =>
     navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: true, timeout: 15000 })
   );
-  const { latitude, longitude, accuracy } = pos.coords;
+  const { latitude, longitude } = pos.coords;
   const dmsStr  = formatDMS(latitude, longitude);
   const timeStr = formatServerTime(serverTime);
-  const accuracyStr = `Akurasi: ±${Math.round(accuracy)} m`;
-  const accuracyBad = accuracy > 50;
 
   // createImageBitmap membaca orientasi EXIF otomatis supaya foto tidak kebalik/miring
   let bitmap;
@@ -152,12 +121,8 @@ const applyOverlay = async (file, cachedPos) => {
   const pad      = fontSize * 0.7;
   const lineH    = fontSize * 1.6;
   ctx.font = `bold ${fontSize}px Arial, sans-serif`;
-  const boxW = Math.max(
-    ctx.measureText(timeStr).width,
-    ctx.measureText(dmsStr).width,
-    ctx.measureText(accuracyStr).width
-  ) + pad * 2.5;
-  const boxH = lineH * 3 + pad * 1.5;
+  const boxW = Math.max(ctx.measureText(timeStr).width, ctx.measureText(dmsStr).width) + pad * 2.5;
+  const boxH = lineH * 2 + pad * 1.5;
   const x    = pad;
   const y    = canvas.height - boxH - pad;
   ctx.fillStyle = "rgba(0,0,0,0.60)";
@@ -166,22 +131,19 @@ const applyOverlay = async (file, cachedPos) => {
   ctx.fillStyle = "#ffffff";
   ctx.fillText(timeStr, x + pad, y + pad + fontSize);
   ctx.fillText(dmsStr,  x + pad, y + pad + fontSize + lineH);
-  ctx.fillStyle = accuracyBad ? "#FCA5A5" : "#ffffff";
-  ctx.fillText(accuracyStr, x + pad, y + pad + fontSize + lineH * 2);
 
-  const blob = await new Promise((res) => canvas.toBlob(res, "image/jpeg", 0.9));
-  return { blob, accuracy };
+  return new Promise((res) => canvas.toBlob(res, "image/jpeg", 0.9));
 };
 
 // ── uploadFoto (shared) ───────────────────────────────────────────────────────
 const uploadFoto = async (file, kategori, cachedPos) => {
-  const { blob, accuracy } = await applyOverlay(file, cachedPos);
+  const blob = await applyOverlay(file, cachedPos);
   const fileName = `hse-${kategori}-${Date.now()}.jpg`;
   const { data, error } = await supabase.storage
     .from("foto-inspeksi").upload(fileName, blob, { contentType: "image/jpeg" });
   if (error) throw new Error("Foto gagal diupload: " + error.message);
   const { data: pub } = supabase.storage.from("foto-inspeksi").getPublicUrl(data.path);
-  return { name: fileName, url: pub.publicUrl, path: data.path, accuracy };
+  return { name: fileName, url: pub.publicUrl, path: data.path };
 };
 
 // ── PhotoLightbox — preview foto full-screen sebelum dikirim ──────────────────
@@ -302,11 +264,6 @@ const CameraCaptureSingle = ({ label, onFoto, foto, errorFoto, onPreview }) => {
               </div>
               <div onClick={removeFoto} style={{ cursor: "pointer", fontWeight: 700, color: theme.danger, flexShrink: 0 }}>✕</div>
             </div>
-            {foto.accuracy != null && foto.accuracy > 50 && (
-              <div style={{ marginTop: 6, fontSize: 11, color: theme.danger, fontWeight: 700 }}>
-                ⚠️ Akurasi GPS rendah (±{Math.round(foto.accuracy)} m) — pertimbangkan ambil ulang di tempat terbuka.
-              </div>
-            )}
           </div>
         ) : (
           <Btn onClick={handleCaptureClick} variant="outline"
@@ -409,11 +366,6 @@ const CameraCaptureMulti = ({ kategori, fotoList, onFotoList, onPreview }) => {
               <div onClick={() => removeFoto(idx)} style={{ cursor: "pointer", fontWeight: 700, color: theme.danger, fontSize: 13 }}>✕</div>
             </div>
           </div>
-          {foto.accuracy != null && foto.accuracy > 50 && (
-            <div style={{ marginBottom: 6, fontSize: 11, color: theme.danger, fontWeight: 700 }}>
-              ⚠️ Akurasi GPS rendah (±{Math.round(foto.accuracy)} m)
-            </div>
-          )}
           <textarea
             placeholder="Keterangan foto ini (wajib)..."
             value={foto.keterangan}
@@ -464,17 +416,13 @@ const HSEFormScreen = ({ onBack, onNav }) => {
   // State uji kedap — 7 checkpoint, masing-masing: { status, foto }
   // Kalau tidak kedap: fotoTemuan (array { name, url, path, keterangan })
   const initCheckpoints = () =>
-    CHECKPOINTS.map((cp) => ({ menit: cp.menit, status: "", foto: null, completedAt: null }));
+    CHECKPOINTS.map((cp) => ({ menit: cp.menit, status: "", foto: null }));
 
   const [checkpoints,  setCheckpoints]  = useState(initCheckpoints);
   const [fotoTemuan,   setFotoTemuan]   = useState([]); // foto bebas saat tidak kedap
 
   // Preview foto (lightbox) — untuk cek foto blur/buram sebelum dikirim
   const [previewUrl, setPreviewUrl] = useState(null);
-
-  // Timer uji kedap — waktu sekarang (untuk hitung mundur) & pencatat checkpoint yang sudah dinotifikasi
-  const [now, setNow] = useState(Date.now());
-  const notifiedRef = useRef(new Set());
 
   // Draft/auto-save — supaya data tidak hilang kalau app ke-close tiba-tiba
   const [ready, setReady] = useState(false);
@@ -506,45 +454,6 @@ const HSEFormScreen = ({ onBack, onNav }) => {
       if (user) setCurrentUser(user.id);
     });
   }, []);
-
-  // Timer: tick tiap detik selama masih ada checkpoint yang menunggu 5 menit
-  useEffect(() => {
-    const anyWaiting = checkpoints.some((cp, i) => {
-      if (i === 0 || cp.status) return false;
-      const prevCp = checkpoints[i - 1];
-      if (!(prevCp?.status === "kedap" && prevCp?.foto && prevCp?.completedAt)) return false;
-      return Date.now() < prevCp.completedAt + CHECKPOINT_INTERVAL_MS;
-    });
-    if (!anyWaiting) return;
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, [checkpoints]);
-
-  // Sinkronkan ulang waktu begitu app kembali aktif (misal habis di-minimize / kunci layar)
-  useEffect(() => {
-    const handler = () => setNow(Date.now());
-    document.addEventListener("visibilitychange", handler);
-    window.addEventListener("focus", handler);
-    return () => {
-      document.removeEventListener("visibilitychange", handler);
-      window.removeEventListener("focus", handler);
-    };
-  }, []);
-
-  // Getar + bunyi begitu waktu tunggu checkpoint berikutnya selesai
-  useEffect(() => {
-    checkpoints.forEach((cp, i) => {
-      if (i === 0 || cp.status) return;
-      const prevCp = checkpoints[i - 1];
-      if (!(prevCp?.status === "kedap" && prevCp?.foto && prevCp?.completedAt)) return;
-      const target = prevCp.completedAt + CHECKPOINT_INTERVAL_MS;
-      if (now >= target && !notifiedRef.current.has(i)) {
-        notifiedRef.current.add(i);
-        if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-        playBeep();
-      }
-    });
-  }, [now, checkpoints]);
 
   // Draft kadaluarsa setelah 6 jam — supaya tidak melanjutkan data lama untuk kendaraan yang sudah lewat jadwal
   const DRAFT_EXPIRE_MS = 6 * 60 * 60 * 1000;
@@ -588,7 +497,6 @@ const HSEFormScreen = ({ onBack, onNav }) => {
   const resetSemua = () => {
     clearDraft();
     draftCreatedAtRef.current = null;
-    notifiedRef.current.clear();
     setStep("sop");
     setSopPage(0);
     setKendaraan({ polisi: "", kapasitas: "", kompartemen: "", transportir: "" });
@@ -674,7 +582,7 @@ const HSEFormScreen = ({ onBack, onNav }) => {
       const next = prev.map((cp, i) => {
         if (i === idx) return { ...cp, status };
         // Kalau tidak kedap dipilih, reset checkpoint setelahnya
-        if (status === "tidak_kedap" && i > idx) return { ...cp, status: "", foto: null, completedAt: null };
+        if (status === "tidak_kedap" && i > idx) return { ...cp, status: "", foto: null };
         return cp;
       });
       return next;
@@ -683,12 +591,8 @@ const HSEFormScreen = ({ onBack, onNav }) => {
     if (status === "kedap") setFotoTemuan([]);
   };
 
-  // completedAt dicatat saat foto terpasang (checkpoint baru dianggap "selesai" di titik ini) —
-  // dipakai sebagai basis hitung mundur 5 menit ke checkpoint berikutnya.
   const setCheckpointFoto = (idx, foto) => {
-    setCheckpoints((prev) => prev.map((cp, i) =>
-      i === idx ? { ...cp, foto, completedAt: foto ? Date.now() : null } : cp
-    ));
+    setCheckpoints((prev) => prev.map((cp, i) => i === idx ? { ...cp, foto } : cp));
   };
 
   // ── Navigasi ──────────────────────────────────────────────────────────────
@@ -713,7 +617,6 @@ const HSEFormScreen = ({ onBack, onNav }) => {
     if (!kategoriMT) { alert("Pilih kategori MT terlebih dahulu!"); return; }
     setCheckpoints(initCheckpoints());
     setFotoTemuan([]);
-    notifiedRef.current.clear();
     setStep("ujikedap");
   };
 
@@ -999,11 +902,6 @@ const HSEFormScreen = ({ onBack, onNav }) => {
           const isTidakKedap = cp.status === "tidak_kedap";
           const isKedap      = cp.status === "kedap";
 
-          // Timer: checkpoint > 0 baru bisa diisi 5 menit setelah checkpoint sebelumnya selesai
-          const target = idx > 0 && prevCp?.completedAt ? prevCp.completedAt + CHECKPOINT_INTERVAL_MS : null;
-          const remainingMs = target ? Math.max(0, target - now) : 0;
-          const isWaiting = idx > 0 && !cp.status && !!target && remainingMs > 0;
-
           return (
             <div key={idx} style={{
               marginBottom: 14, padding: 14, borderRadius: 12, background: theme.surface,
@@ -1017,55 +915,41 @@ const HSEFormScreen = ({ onBack, onNav }) => {
                 </div>
               </div>
 
-              {isWaiting ? (
-                /* Menunggu 5 menit sebelum checkpoint ini bisa diisi */
-                <div style={{ textAlign: "center", padding: "18px 0 10px" }}>
-                  <div style={{ fontSize: 32, fontWeight: 800, color: theme.primary, letterSpacing: 1, fontVariantNumeric: "tabular-nums" }}>
-                    {formatCountdown(remainingMs)}
+              {/* Toggle Kedap / Tidak Kedap */}
+              <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                {["kedap", "tidak_kedap"].map((opt) => (
+                  <div key={opt} onClick={() => setCheckpointStatus(idx, opt)} style={{
+                    flex: 1, textAlign: "center", padding: "9px 0", borderRadius: 8,
+                    fontSize: 13, fontWeight: 600, cursor: "pointer",
+                    background: cp.status === opt
+                      ? (opt === "kedap" ? theme.success : theme.danger)
+                      : theme.surfaceAlt,
+                    color: cp.status === opt ? "#fff" : theme.textMuted,
+                    border: `1.5px solid ${cp.status === opt
+                      ? (opt === "kedap" ? theme.success : theme.danger)
+                      : theme.border}`,
+                  }}>
+                    {opt === "kedap" ? "✅ Kedap" : "❌ Tidak Kedap"}
                   </div>
-                  <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 4 }}>
-                    ⏳ Tunggu sebelum checkpoint ini bisa diisi
-                  </div>
+                ))}
+              </div>
+
+              {/* Foto wajib kalau Kedap */}
+              {isKedap && (
+                <CameraCaptureSingle
+                  label={`Foto alat ukur ${cpDef.label}`}
+                  onFoto={(foto) => setCheckpointFoto(idx, foto)}
+                  foto={cp.foto}
+                  errorFoto={!!errors[`cp_${idx}_foto`]}
+                  onPreview={setPreviewUrl}
+                />
+              )}
+
+              {/* Kalau tidak kedap: tampil info STOP */}
+              {isTidakKedap && (
+                <div style={{ marginTop: 8, padding: "8px 12px", borderRadius: 8, background: theme.dangerLight, fontSize: 12, color: theme.danger, fontWeight: 600 }}>
+                  🛑 Uji dihentikan — lanjut ke pencatatan temuan di bawah
                 </div>
-              ) : (
-                <>
-                  {/* Toggle Kedap / Tidak Kedap */}
-                  <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-                    {["kedap", "tidak_kedap"].map((opt) => (
-                      <div key={opt} onClick={() => setCheckpointStatus(idx, opt)} style={{
-                        flex: 1, textAlign: "center", padding: "9px 0", borderRadius: 8,
-                        fontSize: 13, fontWeight: 600, cursor: "pointer",
-                        background: cp.status === opt
-                          ? (opt === "kedap" ? theme.success : theme.danger)
-                          : theme.surfaceAlt,
-                        color: cp.status === opt ? "#fff" : theme.textMuted,
-                        border: `1.5px solid ${cp.status === opt
-                          ? (opt === "kedap" ? theme.success : theme.danger)
-                          : theme.border}`,
-                      }}>
-                        {opt === "kedap" ? "✅ Kedap" : "❌ Tidak Kedap"}
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Foto wajib kalau Kedap */}
-                  {isKedap && (
-                    <CameraCaptureSingle
-                      label={`Foto alat ukur ${cpDef.label}`}
-                      onFoto={(foto) => setCheckpointFoto(idx, foto)}
-                      foto={cp.foto}
-                      errorFoto={!!errors[`cp_${idx}_foto`]}
-                      onPreview={setPreviewUrl}
-                    />
-                  )}
-
-                  {/* Kalau tidak kedap: tampil info STOP */}
-                  {isTidakKedap && (
-                    <div style={{ marginTop: 8, padding: "8px 12px", borderRadius: 8, background: theme.dangerLight, fontSize: 12, color: theme.danger, fontWeight: 600 }}>
-                      🛑 Uji dihentikan — lanjut ke pencatatan temuan di bawah
-                    </div>
-                  )}
-                </>
               )}
             </div>
           );
