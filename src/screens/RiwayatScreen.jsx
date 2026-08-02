@@ -10,13 +10,22 @@ import { formatDate, formatTime } from "../lib/dateHelper";
 import { getStatusFromInspeksi } from "../lib/inspeksiHelper";
 import { useBreakpoint } from "../hooks/useBreakpoint";
 import { DESKTOP_GRID_GAP, SIDEBAR_WIDTH } from "../styles/layout";
+import { isDepot, isHSE, isP1, isTeknisi } from "../components/BottomNav";
 
-const RiwayatScreen = ({ role, onNav, onOpenDetail }) => {
+// Judul header sesuai kategori data yang sedang ditampilkan
+const SCREEN_TITLE = {
+  gps: "Riwayat GPS & CCTV",
+  hse: "Riwayat Uji Kedap MT",
+  p1:  "Riwayat Cek Random P1",
+};
+
+const RiwayatScreen = ({ role, onNav, onOpenDetail, onOpenDetailHSE, onOpenDetailP1, category }) => {
   const isDesktop = useBreakpoint();
 
   const [filterDate, setFilterDate] = useState("");
   const [filterPlat, setFilterPlat] = useState("");
   const [data, setData] = useState([]);
+  const [dataCategory, setDataCategory] = useState("gps");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -37,15 +46,29 @@ const RiwayatScreen = ({ role, onNav, onOpenDetail }) => {
         return;
       }
 
+      // ── Tentukan tabel & kategori data sesuai role (dan tab aktif untuk depot) ──
       let query;
-      if (role === "hse") {
+      let cat = "gps";
+
+      if (isHSE(role)) {
         query = supabase.from("inspeksi_hse").select("*").eq("user_id", user.id);
-      } else if (role === "p1") {
-        query = supabase.from("inspeksi_p1").select("*").eq("user_id", user.id);
-      } else if (role === "teknisi" || role === "transportir" || role === "mekanik") {
+        cat = "hse";
+      } else if (isP1(role)) {
+        query = supabase.from("inspeksi_p1").select("*, inspeksi_p1_temuan(id)").eq("user_id", user.id);
+        cat = "p1";
+      } else if (isTeknisi(role)) {
         query = supabase.from("inspeksi").select("*").eq("user_id", user.id);
+        cat = "gps";
+      } else if (isDepot(role) && category === "hse") {
+        query = supabase.from("inspeksi_hse").select("*");
+        cat = "hse";
+      } else if (isDepot(role) && category === "p1") {
+        query = supabase.from("inspeksi_p1").select("*, inspeksi_p1_temuan(id)");
+        cat = "p1";
       } else {
+        // Depot + tab GPS & CCTV (atau fallback default)
         query = supabase.from("inspeksi").select("*");
+        cat = "gps";
       }
 
       const { data: inspeksiData, error: fetchError } = await query.order(
@@ -55,16 +78,32 @@ const RiwayatScreen = ({ role, onNav, onOpenDetail }) => {
 
       if (fetchError) throw fetchError;
 
-      const mapped = (inspeksiData ?? []).map((item) => ({
-        id: item.id,
-        plat: item.nomor_polisi,
-        armada: item.nama_armada,
-        pemeriksa: item.nama_pemeriksa,
-        perusahaan: item.perusahaan_transportir,
-        tanggal: item.created_at,
-        status: getStatusFromInspeksi(item),
-      }));
+      const mapped = (inspeksiData ?? []).map((item) => {
+        if (cat === "hse" || cat === "p1") {
+          const kategoriLabel = item.kategori_mt === "merah_putih" ? "MT Merah Putih" : "MT Industri";
+          return {
+            id: item.id,
+            plat: item.nomor_polisi,
+            subtitle: `${item.kapasitas_mt ?? "-"} · ${item.jumlah_kompartemen ?? "-"} kompartemen · ${kategoriLabel}`,
+            perusahaan: item.transportir,
+            tanggal: item.created_at,
+            statusOk: item.status === "selesai",
+            temuanCount: item.inspeksi_p1_temuan?.length,
+          };
+        }
+        // kategori GPS & CCTV
+        return {
+          id: item.id,
+          plat: item.nomor_polisi,
+          armada: item.nama_armada,
+          pemeriksa: item.nama_pemeriksa,
+          perusahaan: item.perusahaan_transportir,
+          tanggal: item.created_at,
+          status: getStatusFromInspeksi(item),
+        };
+      });
 
+      setDataCategory(cat);
       setData(mapped);
     } catch (err) {
       setError("Gagal memuat data. Silakan coba lagi.");
@@ -72,7 +111,7 @@ const RiwayatScreen = ({ role, onNav, onOpenDetail }) => {
     } finally {
       setLoading(false);
     }
-  }, [role]);
+  }, [role, category]);
 
   useEffect(() => {
     loadData();
@@ -87,6 +126,12 @@ const RiwayatScreen = ({ role, onNav, onOpenDetail }) => {
       : true;
     return matchDate && matchPlat;
   });
+
+  const handleOpenDetail = (id) => {
+    if (dataCategory === "hse") return onOpenDetailHSE?.(id);
+    if (dataCategory === "p1") return onOpenDetailP1?.(id);
+    return onOpenDetail?.(id);
+  };
 
   return (
     <div style={{
@@ -109,7 +154,7 @@ const RiwayatScreen = ({ role, onNav, onOpenDetail }) => {
         <div
           style={{ fontWeight: 800, fontSize: 20, color: theme.text, marginBottom: 14 }}
         >
-          Riwayat
+          {SCREEN_TITLE[dataCategory] ?? "Riwayat"}
         </div>
         <div style={{
           display: "flex",
@@ -206,16 +251,34 @@ const RiwayatScreen = ({ role, onNav, onOpenDetail }) => {
                       {d.plat}
                     </div>
                     <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>
-                      {d.armada}
+                      {dataCategory === "gps" ? d.armada : d.subtitle}
                     </div>
-                    <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 3 }}>
-                      👤 {d.pemeriksa} · {d.perusahaan}
-                    </div>
+                    {dataCategory === "gps" ? (
+                      <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 3 }}>
+                        👤 {d.pemeriksa} · {d.perusahaan}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 3 }}>
+                        {d.perusahaan}
+                        {dataCategory === "p1" && d.temuanCount > 0 && ` · ${d.temuanCount} temuan`}
+                      </div>
+                    )}
                     <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2 }}>
                       {formatDate(d.tanggal)} · {formatTime(d.tanggal)}
                     </div>
                   </div>
-                  <Badge status={d.status} />
+                  {dataCategory === "gps" ? (
+                    <Badge status={d.status} />
+                  ) : (
+                    <div style={{
+                      fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 20,
+                      background: d.statusOk ? theme.successLight : theme.dangerLight,
+                      color: d.statusOk ? theme.success : theme.danger,
+                      whiteSpace: "nowrap",
+                    }}>
+                      {d.statusOk ? "✓ Selesai" : "⚠️ Perlu Tindak Lanjut"}
+                    </div>
+                  )}
                 </div>
                 <div
                   style={{
@@ -226,7 +289,7 @@ const RiwayatScreen = ({ role, onNav, onOpenDetail }) => {
                   }}
                 >
                   <Btn
-                    onClick={() => onOpenDetail(d.id)}
+                    onClick={() => handleOpenDetail(d.id)}
                     variant="ghost"
                     icon="eye"
                     style={{ fontSize: 12, padding: "8px", flex: 1 }}

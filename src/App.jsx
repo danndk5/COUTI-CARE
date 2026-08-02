@@ -359,7 +359,16 @@ const App = () => {
         {safeScreen === "dashboard"      && renderDashboard()}
         {safeScreen === "form"           && renderForm()}
         {safeScreen === "tindak-lanjut"  && renderTindakLanjut()}
-        {safeScreen === "history"        && <RiwayatScreen role={role} onNav={nav} onOpenDetail={openDetail} />}
+        {safeScreen === "history"        && (
+          <RiwayatScreen
+            role={role}
+            onNav={nav}
+            onOpenDetail={openDetail}
+            onOpenDetailHSE={openDetailHSE}
+            onOpenDetailP1={openDetailP1}
+            category={isDepot(role) ? depotActiveTab : undefined}
+          />
+        )}
         {safeScreen === "maintenance"    && <MaintenanceScreen role={role} onNav={nav} />}
         {safeScreen === "export"         && <ExportScreen onNav={nav} onBack={() => window.history.back()} />}
         {safeScreen === "admin-kendaraan" && <AdminKendaraanScreen role={role} onNav={nav} onBack={() => window.history.back()} />}

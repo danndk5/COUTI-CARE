@@ -6,6 +6,14 @@ import theme from "../styles/theme";
 import { supabase } from "../lib/supabase";
 import { formatDate, formatTime } from "../lib/dateHelper";
 
+// ⚠️ PENTING — bug fix (Agustus 2026):
+// Tabel `inspeksi_hse` menyimpan status hasil uji kedap sebagai
+// "lulus" / "tidak_lulus" (lihat HSEFormScreen.jsx), BUKAN "selesai".
+// Jangan cek data.status === "selesai" di sini — itu nilai yang tidak
+// pernah ada di tabel ini, sehingga badge selalu tampil salah
+// ("Perlu Tindak Lanjut") walaupun hasil uji kedap sudah lulus.
+const HSE_LULUS = "lulus";
+
 // ─── Sub-komponen ────────────────────────────────────────────────────────────
 
 const InfoRow = ({ label, value }) => (
@@ -172,7 +180,8 @@ const DetailHSEScreen = ({ hseId, onBack }) => {
     );
   }
 
-  const isSelesai = data.status === "selesai";
+  // FIX: cek "lulus", bukan "selesai" — lihat catatan di atas
+  const isLulus = data.status === HSE_LULUS;
   const tidakKedapCount = checkpoints.filter((c) => c.status?.toLowerCase() !== "kedap").length;
   const kategoriLabel = data.kategori_mt === "merah_putih" ? "MT Merah Putih" : "MT Industri";
 
@@ -201,11 +210,11 @@ const DetailHSEScreen = ({ hseId, onBack }) => {
           <div
             style={{
               fontSize: 11, fontWeight: 700, padding: "4px 12px", borderRadius: 20,
-              background: isSelesai ? theme.successLight : theme.dangerLight,
-              color: isSelesai ? theme.success : theme.danger,
+              background: isLulus ? theme.successLight : theme.dangerLight,
+              color: isLulus ? theme.success : theme.danger,
             }}
           >
-            {isSelesai ? "✓ Selesai" : "⚠️ Perlu Tindak Lanjut"}
+            {isLulus ? "✓ Kedap / Lulus" : "⚠️ Perlu Tindak Lanjut"}
           </div>
         </div>
       </div>

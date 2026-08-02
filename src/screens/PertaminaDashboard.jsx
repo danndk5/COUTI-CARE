@@ -158,13 +158,14 @@ const TabBar = ({ active, onChange, counts = {} }) => (
   <div style={{
     display: "flex", borderBottom: `2px solid ${theme.border}`,
     background: theme.surface, paddingLeft: 16, paddingRight: 16,
+    overflowX: "auto", WebkitOverflowScrolling: "touch",
   }}>
     {TAB_LIST.map((t) => (
       <div key={t.key} onClick={() => onChange(t.key)} style={{
         padding: "12px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer",
         color: active === t.key ? theme.primary : theme.textMuted,
         borderBottom: active === t.key ? `3px solid ${theme.primary}` : "3px solid transparent",
-        marginBottom: -2, whiteSpace: "nowrap",
+        marginBottom: -2, whiteSpace: "nowrap", flexShrink: 0,
         transition: "color 0.15s, border-color 0.15s",
         letterSpacing: "0.1px",
       }}>
@@ -460,8 +461,8 @@ const TabHSE = ({ isDesktop, onOpenDetail, onCountChange }) => {
 
   const stats = {
     total: list.length,
-    kedap: list.filter((i) => i.status === "selesai").length,
-    perlu: list.filter((i) => i.status !== "selesai").length,
+    kedap: list.filter((i) => i.status === "lulus").length,
+    perlu: list.filter((i) => i.status !== "lulus").length,
   };
 
   // Trend 7 hari
@@ -500,8 +501,8 @@ const TabHSE = ({ isDesktop, onOpenDetail, onCountChange }) => {
   const filteredList = list.filter((item) => {
     if (activeBar) return item.created_at?.slice(0, 10) === activeBar;
     if (filter === "semua")       return true;
-    if (filter === "selesai")     return item.status === "selesai";
-    if (filter === "perlu")       return item.status !== "selesai";
+    if (filter === "selesai")     return item.status === "lulus";
+    if (filter === "perlu")       return item.status !== "lulus";
     if (filter === "merah_putih") return item.kategori_mt === "merah_putih";
     if (filter === "industri")    return item.kategori_mt === "industri";
     return true;
@@ -626,7 +627,7 @@ const TabHSE = ({ isDesktop, onOpenDetail, onCountChange }) => {
       </FilterPillsRow>
 
       {/* Label filter aktif */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", rowGap: 4 }}>
         <SectionLabel style={{ margin: 0 }}>
           Daftar Laporan Uji Kedap MT
           {activeFilterLabel && <span style={{ fontSize: 12, fontWeight: 600, color: "#D97706", marginLeft: 8 }}>{activeFilterLabel}</span>}
@@ -636,39 +637,42 @@ const TabHSE = ({ isDesktop, onOpenDetail, onCountChange }) => {
 
       {filteredList.length > 0 ? (
         <div style={{ display: "grid", gridTemplateColumns: isDesktop ? "repeat(auto-fill, minmax(300px, 1fr))" : "1fr", gap: isDesktop ? DESKTOP_GRID_GAP : 0 }}>
-          {filteredList.map((item) => (
-            <Card
-              key={item.id}
-              onClick={() => onOpenDetail?.(item.id)}
-              style={{ marginBottom: isDesktop ? 0 : 10, padding: "14px 16px", cursor: "pointer" }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <div style={{ width: 42, height: 42, borderRadius: 12, background: "#FEF3C7", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  <Icon name="car" size={18} color="#D97706" />
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 700, fontSize: 14, color: theme.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.nomor_polisi}</div>
-                  <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 1 }}>{item.transportir}</div>
-                  <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 1 }}>
-                    {item.kapasitas_mt} · {item.jumlah_kompartemen} kompartemen · {item.kategori_mt === "merah_putih" ? "MT Merah Putih" : "MT Industri"}
+          {filteredList.map((item) => {
+            const isLulus = item.status === "lulus";
+            return (
+              <Card
+                key={item.id}
+                onClick={() => onOpenDetail?.(item.id)}
+                style={{ marginBottom: isDesktop ? 0 : 10, padding: "14px 16px", cursor: "pointer" }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{ width: 42, height: 42, borderRadius: 12, background: "#FEF3C7", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <Icon name="car" size={18} color="#D97706" />
                   </div>
-                  <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2 }}>
-                    {formatDate(item.created_at)} · {formatTime(item.created_at)}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: theme.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.nomor_polisi}</div>
+                    <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 1 }}>{item.transportir}</div>
+                    <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 1 }}>
+                      {item.kapasitas_mt} · {item.jumlah_kompartemen} kompartemen · {item.kategori_mt === "merah_putih" ? "MT Merah Putih" : "MT Industri"}
+                    </div>
+                    <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2 }}>
+                      {formatDate(item.created_at)} · {formatTime(item.created_at)}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6, flexShrink: 0 }}>
+                    <div style={{
+                      fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 20,
+                      background: isLulus ? theme.successLight : theme.dangerLight,
+                      color: isLulus ? theme.success : theme.danger,
+                    }}>
+                      {isLulus ? "✓ Kedap / Lulus" : "⚠️ Perlu Tindak Lanjut"}
+                    </div>
+                    <Icon name="chevron" size={14} color={theme.textMuted} />
                   </div>
                 </div>
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6, flexShrink: 0 }}>
-                  <div style={{
-                    fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 20,
-                    background: item.status === "selesai" ? theme.successLight : theme.dangerLight,
-                    color: item.status === "selesai" ? theme.success : theme.danger,
-                  }}>
-                    {item.status === "selesai" ? "✓ Selesai" : "⚠️ Perlu Tindak Lanjut"}
-                  </div>
-                  <Icon name="chevron" size={14} color={theme.textMuted} />
-                </div>
-              </div>
-            </Card>
-          ))}
+              </Card>
+            );
+          })}
         </div>
       ) : (
         <Card style={{ padding: "28px 16px", textAlign: "center" }}>
@@ -712,10 +716,14 @@ const TabP1 = ({ isDesktop, onOpenDetail, onCountChange }) => {
     loadData();
   }, []);
 
+  // Sama dengan DetailP1Screen.jsx: sumber kebenaran adalah data temuan,
+  // bukan kolom status (nilainya tidak konsisten). Tidak ada temuan = selesai.
+  const isP1Selesai = (item) => (item.inspeksi_p1_temuan?.length || 0) === 0 || item.status === "selesai";
+
   const stats = {
     total:   list.length,
-    perlu:   list.filter((i) => i.status !== "selesai").length,
-    selesai: list.filter((i) => i.status === "selesai").length,
+    perlu:   list.filter((i) => !isP1Selesai(i)).length,
+    selesai: list.filter((i) => isP1Selesai(i)).length,
   };
 
   // Trend 7 hari
@@ -738,8 +746,8 @@ const TabP1 = ({ isDesktop, onOpenDetail, onCountChange }) => {
 
   const filteredList = list.filter((item) => {
     if (filter === "semua")   return true;
-    if (filter === "perlu")   return item.status !== "selesai";
-    if (filter === "selesai") return item.status === "selesai";
+    if (filter === "perlu")   return !isP1Selesai(item);
+    if (filter === "selesai") return isP1Selesai(item);
     if (filter === "merah_putih") return item.kategori_mt === "merah_putih";
     if (filter === "industri")    return item.kategori_mt === "industri";
     return true;
@@ -832,6 +840,7 @@ const TabP1 = ({ isDesktop, onOpenDetail, onCountChange }) => {
         <div style={{ display: "grid", gridTemplateColumns: isDesktop ? "repeat(auto-fill, minmax(300px, 1fr))" : "1fr", gap: isDesktop ? DESKTOP_GRID_GAP : 0 }}>
           {filteredList.map((item) => {
             const temuanCount = item.inspeksi_p1_temuan?.length || 0;
+            const selesai = isP1Selesai(item);
             return (
               <Card
                 key={item.id}
@@ -857,10 +866,10 @@ const TabP1 = ({ isDesktop, onOpenDetail, onCountChange }) => {
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6, flexShrink: 0 }}>
                     <div style={{
                       fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 20,
-                      background: item.status === "selesai" ? theme.successLight : theme.dangerLight,
-                      color: item.status === "selesai" ? theme.success : theme.danger,
+                      background: selesai ? theme.successLight : theme.dangerLight,
+                      color: selesai ? theme.success : theme.danger,
                     }}>
-                      {item.status === "selesai" ? "✓ Selesai" : "⚠️ Perlu Tindak Lanjut"}
+                      {selesai ? "✓ Tidak Ada Temuan" : "⚠️ Perlu Tindak Lanjut"}
                     </div>
                     <Icon name="chevron" size={14} color={theme.textMuted} />
                   </div>
@@ -917,7 +926,7 @@ const PertaminaDashboard = ({ onNav, onLogout, onOpenDetail, onOpenKategori, onO
         borderBottom: `1px solid ${theme.border}`, boxShadow: theme.shadow,
         position: "sticky", top: 0, zIndex: 20,
       }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", rowGap: 10 }}>
           <div>
             <div style={{ fontSize: 13, color: theme.textMuted }}>Selamat datang,</div>
             <div style={{ fontSize: 19, fontWeight: 800, color: theme.text }}>Pertamina</div>
@@ -925,7 +934,7 @@ const PertaminaDashboard = ({ onNav, onLogout, onOpenDetail, onOpenKategori, onO
               Depot · Monitor & Audit
             </div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: isDesktop ? 10 : 8, flexWrap: "wrap" }}>
             {isDesktop && (
               <>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 14px", borderRadius: 10, border: `1px solid ${theme.border}`, background: theme.surface, color: theme.textMuted, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>

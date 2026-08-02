@@ -78,10 +78,10 @@ const LoginScreen = ({ onLogin, onGoRegister, onForgotPassword }) => {
           <Icon name="gps" size={30} color="#fff" />
         </div>
         <div style={{ fontSize: 24, fontWeight: 800, color: theme.text }}>
-          GPS & CCTV
+          SIMT
         </div>
         <div style={{ fontSize: 13, color: theme.textMuted, marginTop: 4 }}>
-          Sistem Pemantauan Armada
+          Sistem Inspeksi Mobil Tangki
         </div>
       </div>
 

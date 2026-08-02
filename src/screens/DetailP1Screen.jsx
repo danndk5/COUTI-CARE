@@ -97,7 +97,22 @@ const DetailP1Screen = ({ p1Id, onBack }) => {
     );
   }
 
-  const isSelesai = data.status === "selesai";
+  // ⚠️ PENTING — bug fix (Agustus 2026):
+  // Sebelumnya badge cek data.status === "selesai", tapi nilai kolom
+  // `status` di tabel inspeksi_p1 tidak konsisten/tidak jelas asalnya
+  // (tidak ada P1FormScreen.jsx yang bisa dipastikan nilainya). Akibatnya
+  // laporan yang temuannya kosong pun tetap tampil "Perlu Tindak Lanjut".
+  //
+  // Sumber kebenaran yang lebih dapat diandalkan adalah data temuan itu
+  // sendiri: kalau tidak ada temuan sama sekali (temuanList kosong),
+  // berarti tidak ada yang perlu ditindaklanjuti — apapun nilai
+  // data.status. Kalau nanti P1FormScreen.jsx sudah pasti menyimpan
+  // status yang benar (misalnya "selesai" setelah ditindaklanjuti),
+  // logika ini bisa disesuaikan lagi supaya tetap menghormati status
+  // "sudah ditindaklanjuti" secara manual oleh P1, bukan cuma jumlah
+  // temuan mentah.
+  const belumAdaTemuan = temuanList.length === 0;
+  const isSelesai = belumAdaTemuan || data.status === "selesai";
   const kategoriLabel = data.kategori_mt === "merah_putih" ? "MT Merah Putih" : "MT Industri";
 
   return (
@@ -129,7 +144,7 @@ const DetailP1Screen = ({ p1Id, onBack }) => {
               color: isSelesai ? theme.success : theme.danger,
             }}
           >
-            {isSelesai ? "✓ Selesai" : "⚠️ Perlu Tindak Lanjut"}
+            {isSelesai ? "✓ Tidak Ada Temuan" : "⚠️ Perlu Tindak Lanjut"}
           </div>
         </div>
       </div>
