@@ -79,7 +79,9 @@ const RiwayatScreen = ({ role, onNav, onOpenDetail, onOpenDetailHSE, onOpenDetai
       if (fetchError) throw fetchError;
 
       const mapped = (inspeksiData ?? []).map((item) => {
-        if (cat === "hse" || cat === "p1") {
+        if (cat === "hse") {
+          // Sama dengan DetailHSEScreen.jsx: tabel inspeksi_hse menyimpan
+          // status sebagai "lulus" / "tidak_lulus", bukan "selesai".
           const kategoriLabel = item.kategori_mt === "merah_putih" ? "MT Merah Putih" : "MT Industri";
           return {
             id: item.id,
@@ -87,8 +89,24 @@ const RiwayatScreen = ({ role, onNav, onOpenDetail, onOpenDetailHSE, onOpenDetai
             subtitle: `${item.kapasitas_mt ?? "-"} · ${item.jumlah_kompartemen ?? "-"} kompartemen · ${kategoriLabel}`,
             perusahaan: item.transportir,
             tanggal: item.created_at,
-            statusOk: item.status === "selesai",
-            temuanCount: item.inspeksi_p1_temuan?.length,
+            statusOk: item.status === "lulus",
+            temuanCount: undefined,
+          };
+        }
+        if (cat === "p1") {
+          // Sama dengan DetailP1Screen.jsx: sumber kebenaran adalah data
+          // temuan, bukan kolom status (nilainya tidak konsisten).
+          // Tidak ada temuan = selesai / tidak ada yang perlu ditindaklanjuti.
+          const kategoriLabel = item.kategori_mt === "merah_putih" ? "MT Merah Putih" : "MT Industri";
+          const temuanCount = item.inspeksi_p1_temuan?.length || 0;
+          return {
+            id: item.id,
+            plat: item.nomor_polisi,
+            subtitle: `${item.kapasitas_mt ?? "-"} · ${item.jumlah_kompartemen ?? "-"} kompartemen · ${kategoriLabel}`,
+            perusahaan: item.transportir,
+            tanggal: item.created_at,
+            statusOk: temuanCount === 0 || item.status === "selesai",
+            temuanCount,
           };
         }
         // kategori GPS & CCTV
@@ -276,7 +294,9 @@ const RiwayatScreen = ({ role, onNav, onOpenDetail, onOpenDetailHSE, onOpenDetai
                       color: d.statusOk ? theme.success : theme.danger,
                       whiteSpace: "nowrap",
                     }}>
-                      {d.statusOk ? "✓ Selesai" : "⚠️ Perlu Tindak Lanjut"}
+                      {d.statusOk
+                        ? (dataCategory === "hse" ? "✓ Kedap / Lulus" : "✓ Tidak Ada Temuan")
+                        : "⚠️ Perlu Tindak Lanjut"}
                     </div>
                   )}
                 </div>
