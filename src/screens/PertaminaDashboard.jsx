@@ -935,21 +935,27 @@ const PertaminaDashboard = ({ onNav, onLogout, onOpenDetail, onOpenKategori, onO
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: isDesktop ? 10 : 8, flexWrap: "wrap" }}>
-            {isDesktop && (
-              <>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 14px", borderRadius: 10, border: `1px solid ${theme.border}`, background: theme.surface, color: theme.textMuted, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>
-                  <Icon name="search" size={14} color={theme.textMuted} />
-                  Filter
-                </div>
-                <div
-                  onClick={() => onNav("export")}
-                  style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 14px", borderRadius: 10, border: `1px solid ${theme.border}`, background: theme.surface, color: theme.textMuted, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}
-                >
-                  <Icon name="download" size={14} color={theme.textMuted} />
-                  Export
-                </div>
-              </>
-            )}
+            <div title="Segera hadir" style={{
+              display: "flex", alignItems: "center", gap: 6,
+              padding: isDesktop ? "9px 14px" : "9px 10px", borderRadius: 10,
+              border: `1px solid ${theme.border}`, background: theme.surface, color: theme.textMuted,
+              fontSize: 12.5, fontWeight: 600, cursor: "pointer",
+            }}>
+              <Icon name="search" size={14} color={theme.textMuted} />
+              {isDesktop && "Filter"}
+            </div>
+            <div
+              onClick={() => onNav("export")}
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                padding: isDesktop ? "9px 14px" : "9px 10px", borderRadius: 10,
+                border: `1px solid ${theme.border}`, background: theme.surface, color: theme.textMuted,
+                fontSize: 12.5, fontWeight: 600, cursor: "pointer",
+              }}
+            >
+              <Icon name="download" size={14} color={theme.textMuted} />
+              {isDesktop && "Export"}
+            </div>
             <div
               onClick={() => onNav("admin-kendaraan")}
               style={{
