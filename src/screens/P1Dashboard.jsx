@@ -1,63 +1,114 @@
 import { useState, useEffect } from "react";
-import BottomNav from "../components/BottomNav";
-import Card from "../components/Card";
 import Icon from "../components/Icon";
-import theme from "../styles/theme";
 import { supabase } from "../lib/supabase";
-import { useBreakpoint } from "../hooks/useBreakpoint";
-import { SIDEBAR_WIDTH } from "../styles/layout";
 
-// ── List kendaraan (sub-view dari stat card) ──────────────────────────────────
+// ── Palet warna dark, khusus dipakai di halaman P1 saja ────────────────────
+// (tidak mengubah theme.js, jadi role lain tetap light theme seperti biasa)
+const C = {
+  bg:          "#0B0F14",
+  surface:     "#12161C",
+  surfaceAlt:  "#1A1F26",
+  border:      "#232830",
+  text:        "#F1F5F9",
+  textMuted:   "#94A3B8",
+  primary:     "#3B82F6",
+  badgeBg:     "#1E293B",
+  badgeText:   "#93C5FD",
+  totalBg:     "#23262B",
+  totalText:   "#F1F5F9",
+  dangerBg:    "#341518",
+  dangerText:  "#F87171",
+  successBg:   "#12291C",
+  successText: "#4ADE80",
+};
+
+// Lebar tampilan dikunci seukuran HP — akun P1 memang cuma dipakai di ponsel
+const FRAME_WIDTH = 430;
+
+// ── List kendaraan (sub-view dari stat card) — versi dark ──────────────────
 const KendaraanList = ({ title, items, onBack }) => (
-  <div style={{ minHeight: "100vh", background: theme.bg }}>
-    <div style={{ background: theme.surface, padding: "48px 16px 16px", borderBottom: `1px solid ${theme.border}`, boxShadow: theme.shadow }}>
-      <div onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, cursor: "pointer", color: theme.textSub, fontSize: 13 }}>
-        <Icon name="arrow" size={16} color={theme.textSub} /> Kembali
+  <div style={{ minHeight: "100vh", background: C.bg }}>
+    <div style={{ maxWidth: FRAME_WIDTH, margin: "0 auto" }}>
+    <div style={{ background: C.surface, padding: "48px 16px 16px", borderBottom: `1px solid ${C.border}` }}>
+      <div onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, cursor: "pointer", color: C.textMuted, fontSize: 13 }}>
+        <Icon name="arrow" size={16} color={C.textMuted} /> Kembali
       </div>
-      <div style={{ fontWeight: 800, fontSize: 18, color: theme.text }}>{title}</div>
-      <div style={{ fontSize: 13, color: theme.textMuted, marginTop: 2 }}>{items.length} kendaraan</div>
+      <div style={{ fontWeight: 800, fontSize: 18, color: C.text }}>{title}</div>
+      <div style={{ fontSize: 13, color: C.textMuted, marginTop: 2 }}>{items.length} kendaraan</div>
     </div>
     <div style={{ padding: "20px 16px 40px" }}>
       {items.length === 0 ? (
-        <Card style={{ padding: 40, textAlign: "center" }}>
+        <div style={{ padding: 40, textAlign: "center", background: C.surface, borderRadius: 14, border: `1px solid ${C.border}` }}>
           <div style={{ fontSize: 32, marginBottom: 12 }}>📋</div>
-          <div style={{ fontSize: 14, color: theme.textMuted }}>Belum ada data</div>
-        </Card>
+          <div style={{ fontSize: 14, color: C.textMuted }}>Belum ada data</div>
+        </div>
       ) : items.map((i) => (
-        <Card key={i.id} style={{ marginBottom: 12, padding: "14px 16px" }}>
+        <div key={i.id} style={{ marginBottom: 12, padding: "14px 16px", background: C.surface, borderRadius: 14, border: `1px solid ${C.border}` }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div style={{ width: 44, height: 44, borderRadius: 12, background: "#EDE9FE", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <Icon name="car" size={20} color="#7C3AED" />
+            <div style={{ width: 44, height: 44, borderRadius: 12, background: C.badgeBg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <Icon name="car" size={20} color={C.badgeText} />
             </div>
             <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 700, fontSize: 15, color: theme.text }}>{i.nomor_polisi}</div>
-              <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>{i.transportir}</div>
-              <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 1 }}>
+              <div style={{ fontWeight: 700, fontSize: 15, color: C.text }}>{i.nomor_polisi}</div>
+              <div style={{ fontSize: 12, color: C.textMuted, marginTop: 2 }}>{i.transportir}</div>
+              <div style={{ fontSize: 11, color: C.textMuted, marginTop: 1 }}>
                 {i.kapasitas_mt} · {i.jumlah_kompartemen} kompartemen · {i.kategori_mt === "merah_putih" ? "MT Merah Putih" : "MT Industri"}
               </div>
-              <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 1 }}>
+              <div style={{ fontSize: 11, color: C.textMuted, marginTop: 1 }}>
                 {new Date(i.created_at).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}
               </div>
             </div>
             <div style={{ fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 20,
-              background: i.status === "selesai" ? theme.successLight : theme.dangerLight,
-              color: i.status === "selesai" ? theme.success : theme.danger }}>
+              background: i.status === "selesai" ? C.successBg : C.dangerBg,
+              color: i.status === "selesai" ? C.successText : C.dangerText }}>
               {i.status === "selesai" ? "Selesai" : "Perlu Tindak Lanjut"}
             </div>
           </div>
-        </Card>
+        </div>
       ))}
+    </div>
     </div>
   </div>
 );
 
-// ── P1Dashboard ───────────────────────────────────────────────────────────────
+// ── Nav khusus P1 (dark) — dibuat lokal, tidak pakai BottomNav.jsx bersama ──
+const NAV_ITEMS = [
+  { id: "dashboard",     label: "Beranda",       icon: "home"    },
+  { id: "form",          label: "Pengecekan",    icon: "plus"    },
+  { id: "tindak-lanjut", label: "Tindak Lanjut", icon: "wrench"  },
+  { id: "history",       label: "Riwayat",       icon: "history" },
+];
+
+const P1NavDark = ({ active, onNav }) => {
+  return (
+    <div style={{
+      position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)",
+      width: "100%", maxWidth: FRAME_WIDTH, background: C.surface, borderTop: `1px solid ${C.border}`,
+      display: "flex", zIndex: 100,
+    }}>
+      {NAV_ITEMS.map((n) => {
+        const isActive = active === n.id;
+        return (
+          <div key={n.id} onClick={() => onNav(n.id)} style={{
+            flex: 1, display: "flex", flexDirection: "column", alignItems: "center",
+            padding: "10px 4px 14px", cursor: "pointer",
+            color: isActive ? C.primary : C.textMuted,
+          }}>
+            <Icon name={n.icon} size={20} color={isActive ? C.primary : C.textMuted} />
+            <div style={{ fontSize: 10, marginTop: 4, fontWeight: isActive ? 700 : 400 }}>{n.label}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+// ── P1Dashboard ───────────────────────────────────────────────────────────
 const P1Dashboard = ({ role, onNav, onLogout }) => {
-  const isDesktop = useBreakpoint();
   const [currentUser, setCurrentUser] = useState(null);
   const [inspeksiAll, setInspeksiAll] = useState([]);
   const [loading,     setLoading]     = useState(true);
-  const [view,        setView]        = useState("dashboard"); // "dashboard"|"all"|"perlu"|"selesai"
+  const [view,        setView]        = useState("dashboard");
 
   useEffect(() => {
     const load = async () => {
@@ -77,84 +128,108 @@ const P1Dashboard = ({ role, onNav, onLogout }) => {
     load();
   }, []);
 
-  const perluTindak  = inspeksiAll.filter(i => i.status !== "selesai");
-  const sudahTindak  = inspeksiAll.filter(i => i.status === "selesai");
+  const perluTindak = inspeksiAll.filter(i => i.status !== "selesai");
+  const sudahTindak = inspeksiAll.filter(i => i.status === "selesai");
+  const perluTindakPreview = perluTindak.slice(0, 3);
+  const displayName = currentUser?.nama || "P1 Officer";
 
-  if (view === "all")    return <KendaraanList title="Total Diperiksa"        items={inspeksiAll}  onBack={() => setView("dashboard")} />;
-  if (view === "perlu")  return <KendaraanList title="Perlu Ditindaklanjuti"  items={perluTindak}  onBack={() => setView("dashboard")} />;
-  if (view === "selesai")return <KendaraanList title="Sudah Ditindaklanjuti"  items={sudahTindak}  onBack={() => setView("dashboard")} />;
+  if (view === "all")     return <KendaraanList title="Total Diperiksa"       items={inspeksiAll}  onBack={() => setView("dashboard")} />;
+  if (view === "perlu")   return <KendaraanList title="Perlu Ditindaklanjuti" items={perluTindak}  onBack={() => setView("dashboard")} />;
+  if (view === "selesai") return <KendaraanList title="Sudah Ditindaklanjuti" items={sudahTindak}  onBack={() => setView("dashboard")} />;
 
-  const MENU = [
-    { label: "Pengecekan",    icon: "plus",    screen: "form",          color: "#7C3AED", bg: "#EDE9FE", desc: "Buat laporan cek random baru" },
-    { label: "Tindak Lanjut", icon: "wrench",  screen: "tindak-lanjut", color: "#D97706", bg: "#FEF3C7", desc: "Tangani temuan yang belum selesai" },
-    { label: "Riwayat",       icon: "history", screen: "history",        color: theme.success, bg: theme.successLight, desc: "Lihat riwayat pengecekan" },
+  const STATS = [
+    { val: inspeksiAll.length, label: "Total",        view: "all",     bg: C.totalBg,   text: C.totalText   },
+    { val: perluTindak.length, label: "Perlu tindak", view: "perlu",   bg: C.dangerBg,  text: C.dangerText  },
+    { val: sudahTindak.length, label: "Selesai",      view: "selesai", bg: C.successBg, text: C.successText },
   ];
 
   return (
+    <div style={{ minHeight: "100vh", background: C.bg }}>
     <div style={{
-      minHeight: "100vh", background: theme.bg, display: "flex", flexDirection: "column",
-      paddingBottom: isDesktop ? 0 : 80,
-      marginLeft: isDesktop ? SIDEBAR_WIDTH : 0,
+      maxWidth: FRAME_WIDTH, margin: "0 auto",
+      minHeight: "100vh", display: "flex", flexDirection: "column",
+      paddingBottom: 80,
     }}>
       {/* Header */}
-      <div style={{ background: theme.surface, padding: "48px 20px 20px", borderBottom: `1px solid ${theme.border}`, boxShadow: theme.shadow }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div style={{ padding: "48px 20px 20px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
-            <div style={{ fontSize: 13, color: theme.textMuted }}>Selamat datang,</div>
-            <div style={{ fontSize: 19, fontWeight: 800, color: theme.text }}>{currentUser?.nama || "P1"}</div>
-            <div style={{ display: "inline-block", marginTop: 4, fontSize: 11, fontWeight: 600, padding: "2px 10px", borderRadius: 20, background: "#EDE9FE", color: "#7C3AED" }}>
+            <div style={{ fontSize: 13, color: C.textMuted }}>Selamat datang,</div>
+            <div style={{ fontSize: 26, fontWeight: 800, color: C.text, marginTop: 2 }}>{displayName}</div>
+            <div style={{ display: "inline-block", marginTop: 8, fontSize: 12, fontWeight: 600, padding: "4px 12px", borderRadius: 20, background: C.badgeBg, color: C.badgeText }}>
               P1 · Cek Random
             </div>
           </div>
-          <div onClick={onLogout} style={{ cursor: "pointer", padding: 10, borderRadius: 12, background: theme.surfaceAlt }}>
-            <Icon name="logout" size={18} color={theme.textSub} />
+          <div onClick={onLogout} style={{ cursor: "pointer", padding: 10, borderRadius: 12, background: C.surfaceAlt, border: `1px solid ${C.border}` }}>
+            <Icon name="logout" size={18} color={C.textMuted} />
           </div>
         </div>
       </div>
 
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "24px 24px", gap: 14 }}>
-        {/* 3 Tombol Utama — vertikal di tengah sesuai spesifikasi */}
-        <div style={{ fontSize: 14, fontWeight: 800, color: theme.text, marginBottom: 4, textAlign: "center" }}>Pilih Kegiatan</div>
+      <div style={{ flex: 1, padding: "0 20px 32px" }}>
 
-        {MENU.map((item) => (
-          <div key={item.screen} onClick={() => onNav(item.screen)} style={{
-            width: "100%", maxWidth: 340, padding: "18px 20px", borderRadius: 16,
-            background: item.bg, border: `1.5px solid ${item.color}30`,
-            display: "flex", alignItems: "center", gap: 16,
-            cursor: "pointer", boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
-          }}>
-            <div style={{ width: 48, height: 48, borderRadius: 14, background: item.color, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <Icon name={item.icon} size={22} color="#fff" />
+          {/* Ringkasan angka */}
+          {!loading && (
+            <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
+              {STATS.map((s) => (
+                <div key={s.view} onClick={() => setView(s.view)} style={{
+                  flex: 1, textAlign: "center", padding: "16px 8px",
+                  background: s.bg, borderRadius: 14, cursor: "pointer",
+                }}>
+                  <div style={{ fontWeight: 800, fontSize: 26, color: s.text }}>{s.val}</div>
+                  <div style={{ fontSize: 11, color: s.text, marginTop: 3, fontWeight: 600, opacity: 0.85 }}>{s.label}</div>
+                </div>
+              ))}
             </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 800, fontSize: 16, color: item.color }}>{item.label}</div>
-              <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>{item.desc}</div>
-            </div>
-          </div>
-        ))}
+          )}
 
-        {/* Statistik — klik untuk lihat list */}
-        {!loading && (
-          <div style={{ display: "flex", gap: 10, marginTop: 8, width: "100%", maxWidth: 340 }}>
-            {[
-              { val: inspeksiAll.length, label: "Total",        view: "all",    color: "#7C3AED", bg: "#EDE9FE" },
-              { val: perluTindak.length, label: "Perlu Tindak", view: "perlu",  color: theme.danger, bg: theme.dangerLight },
-              { val: sudahTindak.length, label: "Selesai",      view: "selesai",color: theme.success, bg: theme.successLight },
-            ].map((s) => (
-              <div key={s.view} onClick={() => setView(s.view)} style={{
-                flex: 1, textAlign: "center", padding: "12px 8px",
-                background: s.bg, borderRadius: 12, cursor: "pointer",
-                border: `1px solid ${s.color}30`,
-              }}>
-                <div style={{ fontWeight: 800, fontSize: 22, color: s.color }}>{s.val}</div>
-                <div style={{ fontSize: 10, color: s.color, marginTop: 2, lineHeight: 1.3, fontWeight: 600, opacity: 0.8 }}>{s.label}</div>
+          {/* Perlu tindak lanjut — preview */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: C.text }}>Perlu tindak lanjut</div>
+            {perluTindak.length > 0 && (
+              <div onClick={() => setView("perlu")} style={{ fontSize: 12, fontWeight: 600, color: C.primary, cursor: "pointer" }}>
+                Lihat semua
               </div>
-            ))}
+            )}
           </div>
-        )}
+
+          {!loading && perluTindakPreview.length === 0 && (
+            <div style={{ padding: "28px 16px", textAlign: "center", background: C.surface, borderRadius: 14, border: `1px solid ${C.border}` }}>
+              <div style={{ fontSize: 26, marginBottom: 8 }}>✅</div>
+              <div style={{ fontSize: 13, color: C.textMuted }}>Semua temuan sudah ditindaklanjuti</div>
+            </div>
+          )}
+
+          {perluTindakPreview.length > 0 && (
+            <div style={{ background: C.surface, borderRadius: 14, border: `1px solid ${C.border}`, overflow: "hidden" }}>
+              {perluTindakPreview.map((i, idx) => (
+                <div
+                  key={i.id}
+                  onClick={() => setView("perlu")}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 10, padding: "14px 14px",
+                    cursor: "pointer",
+                    borderBottom: idx < perluTindakPreview.length - 1 ? `1px solid ${C.border}` : "none",
+                  }}
+                >
+                  <Icon name="alert" size={18} color={C.dangerText} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: C.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {i.nomor_polisi}
+                    </div>
+                    <div style={{ fontSize: 11, color: C.textMuted, marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {i.transportir}
+                    </div>
+                  </div>
+                  <Icon name="chevron" size={14} color={C.textMuted} />
+                </div>
+              ))}
+            </div>
+          )}
       </div>
 
-      <BottomNav active="dashboard" onNav={onNav} role={role} />
+      <P1NavDark active="dashboard" onNav={onNav} />
+    </div>
     </div>
   );
 };
