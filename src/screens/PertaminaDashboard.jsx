@@ -193,7 +193,7 @@ const HEALTH_CATEGORY_COLORS = {
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB 1: GPS & CCTV (konten lama, tidak diubah)
 // ─────────────────────────────────────────────────────────────────────────────
-const TabGPS = ({ onOpenDetail, onOpenKategori, isDesktop, onCountChange }) => {
+const TabGPS = ({ onOpenDetail, onOpenKategori, isDesktop, onCountChange, onOverdueChange }) => {
   const [inspeksiList, setInspeksiList] = useState([]);
   const [stats, setStats] = useState({ total: 0, normal: 0, abnormal: 0, selesai: 0 });
   const [loading, setLoading] = useState(true);
@@ -237,6 +237,8 @@ const TabGPS = ({ onOpenDetail, onOpenKategori, isDesktop, onCountChange }) => {
         selesai: withStatus.filter((i) => i.status === "selesai").length,
       });
       onCountChange?.(withStatus.length);
+      const overdueCount = getArmadaReminderList(withStatus).filter((a) => a.status === "overdue").length;
+      onOverdueChange?.(overdueCount);
     } catch (err) {
       console.error("Error loading GPS & CCTV data:", err);
       setError(err.message || "Terjadi kesalahan saat memuat data.");
@@ -896,6 +898,7 @@ const TabP1 = ({ isDesktop, onOpenDetail, onCountChange }) => {
 // ─────────────────────────────────────────────────────────────────────────────
 const PertaminaDashboard = ({ onNav, onLogout, onOpenDetail, onOpenKategori, onOpenDetailHSE, onOpenDetailP1, activeTab, onChangeTab }) => {
   const [tabCounts, setTabCounts] = useState({ gps: null, hse: null, p1: null });
+  const [overdueCount, setOverdueCount] = useState(0);
   const isDesktop = useBreakpoint();
 
   return (
@@ -929,12 +932,27 @@ const PertaminaDashboard = ({ onNav, onLogout, onOpenDetail, onOpenKategori, onO
                   <Icon name="search" size={14} color={theme.textMuted} />
                   Filter
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 14px", borderRadius: 10, border: `1px solid ${theme.border}`, background: theme.surface, color: theme.textMuted, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>
-                  <Icon name="plus" size={14} color={theme.textMuted} />
+                <div
+                  onClick={() => onNav("export")}
+                  style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 14px", borderRadius: 10, border: `1px solid ${theme.border}`, background: theme.surface, color: theme.textMuted, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}
+                >
+                  <Icon name="download" size={14} color={theme.textMuted} />
                   Export
                 </div>
               </>
             )}
+            <div
+              onClick={() => onNav("admin-kendaraan")}
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                padding: isDesktop ? "9px 14px" : "9px 12px", borderRadius: 10,
+                background: theme.primary, color: "#fff",
+                fontSize: 12.5, fontWeight: 700, cursor: "pointer",
+              }}
+            >
+              <Icon name="car" size={14} color="#fff" />
+              {isDesktop ? "Kelola Data Kendaraan" : "Kendaraan"}
+            </div>
             <div onClick={onLogout} style={{ cursor: "pointer", padding: 10, borderRadius: 12, background: theme.surfaceAlt }}>
               <Icon name="logout" size={18} color={theme.textSub} />
             </div>
@@ -951,6 +969,7 @@ const PertaminaDashboard = ({ onNav, onLogout, onOpenDetail, onOpenKategori, onO
           onOpenKategori={onOpenKategori}
           isDesktop={isDesktop}
           onCountChange={(n) => setTabCounts((p) => ({ ...p, gps: n }))}
+          onOverdueChange={setOverdueCount}
         />
       )}
       {activeTab === "hse" && (
@@ -968,7 +987,7 @@ const PertaminaDashboard = ({ onNav, onLogout, onOpenDetail, onOpenKategori, onO
         />
       )}
 
-      <BottomNav active="home" onNav={onNav} role="pertamina" />
+      <BottomNav active="home" onNav={onNav} role="pertamina" userName="Pertamina" badges={{ maintenance: overdueCount }} />
     </div>
   );
 };

@@ -122,6 +122,7 @@ const BottomNav = ({ active, onNav, role, userName, badges = {} }) => {
         {navItems.map((n) => {
           const isActive = active === n.id || (n.id === "dashboard" && active === "dashboard");
           const isCta = !!n.center; // item "Pengecekan" — tonjolkan sebagai aksi utama
+          const badgeCount = badges[n.id];
           return (
             <div
               key={n.id}
@@ -138,9 +139,39 @@ const BottomNav = ({ active, onNav, role, userName, badges = {} }) => {
             >
               <Icon name={n.icon} size={17} color={isCta ? "#fff" : isActive ? "#fff" : "#94A3B8"} />
               {n.label}
+              {badgeCount > 0 && (
+                <span style={{
+                  marginLeft: "auto", background: theme.danger, color: "#fff",
+                  fontSize: 10.5, fontWeight: 700, padding: "1px 7px", borderRadius: 10, flexShrink: 0,
+                }}>
+                  {badgeCount}
+                </span>
+              )}
             </div>
           );
         })}
+
+        {/* Footer: avatar + nama pengguna */}
+        <div style={{
+          marginTop: "auto", paddingTop: 16, borderTop: "1px solid rgba(255,255,255,0.08)",
+          display: "flex", alignItems: "center", gap: 10, paddingLeft: 8,
+        }}>
+          <div style={{
+            width: 32, height: 32, borderRadius: "50%", background: theme.primary,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            color: "#fff", fontWeight: 700, fontSize: 12, flexShrink: 0,
+          }}>
+            {initials}
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ color: "#fff", fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {displayName}
+            </div>
+            <div style={{ color: "#94A3B8", fontSize: 10.5 }}>
+              {FOOTER_ROLE_LABELS[normalizedRole] ?? ""}
+            </div>
+          </div>
+        </div>
       </div>
     );
   }

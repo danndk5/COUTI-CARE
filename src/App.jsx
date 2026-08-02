@@ -16,6 +16,8 @@ import ResetPasswordScreen    from "./screens/ResetPasswordScreen";
 import RiwayatKerusakanScreen from "./screens/RiwayatKerusakanScreen";
 import DetailHSEScreen        from "./screens/DetailHSEScreen";
 import DetailP1Screen         from "./screens/DetailP1Screen";
+import ExportScreen           from "./screens/ExportScreen";
+import AdminKendaraanScreen   from "./screens/AdminKendaraanScreen";
 import { supabase }           from "./lib/supabase";
 import { useBreakpoint }      from "./hooks/useBreakpoint";
 import { MOBILE_MAX_WIDTH, DESKTOP_CONTENT_MAX_WIDTH } from "./styles/layout";
@@ -325,11 +327,12 @@ const App = () => {
   const knownScreens = [
     "login", "register", "dashboard",
     "form", "tindak-lanjut",
-    "history", "maintenance",
+    "history", "maintenance", "export",
     "detail", "tugas-detail",
     "riwayat-kerusakan", "detail-kategori", "filtered-inspeksi",
     "forgot-password", "reset-password",
     "detail-hse", "detail-p1",
+    "admin-kendaraan",
   ];
   const safeScreen = knownScreens.includes(screen) ? screen : "login";
 
@@ -337,7 +340,7 @@ const App = () => {
   // di desktop (lihat BottomNav.jsx). Untuk layar itu JANGAN dipusatkan lagi
   // di sini — biarkan masing-masing screen mengatur marginLeft-nya sendiri,
   // supaya tidak dobel dengan offset sidebar.
-  const sidebarScreens = ["dashboard", "history", "maintenance"];
+  const sidebarScreens = ["dashboard", "history", "maintenance", "export"];
   if (safeScreen === "tindak-lanjut" && (isTeknisi(role) || isHSE(role))) {
     sidebarScreens.push("tindak-lanjut"); // P1TindakLanjut tidak pakai BottomNav bersama, jadi dikecualikan
   }
@@ -358,6 +361,8 @@ const App = () => {
         {safeScreen === "tindak-lanjut"  && renderTindakLanjut()}
         {safeScreen === "history"        && <RiwayatScreen role={role} onNav={nav} onOpenDetail={openDetail} />}
         {safeScreen === "maintenance"    && <MaintenanceScreen role={role} onNav={nav} />}
+        {safeScreen === "export"         && <ExportScreen onNav={nav} onBack={() => window.history.back()} />}
+        {safeScreen === "admin-kendaraan" && <AdminKendaraanScreen role={role} onNav={nav} onBack={() => window.history.back()} />}
         {safeScreen === "detail"         && <DetailScreen inspeksiId={selectedInspeksiId} onBack={() => window.history.back()} />}
         {safeScreen === "tugas-detail"   && <TugasDetailScreen tugasId={selectedTugasId} onBack={() => window.history.back()} />}
         {safeScreen === "riwayat-kerusakan" && <RiwayatKerusakanScreen onBack={() => window.history.back()} />}
