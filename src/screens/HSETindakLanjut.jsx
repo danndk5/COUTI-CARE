@@ -24,6 +24,98 @@ const clearDraft = (inspeksiId) => {
   try { localStorage.removeItem(draftKey(inspeksiId)); } catch {}
 };
 
+// ── Helpers timestamp & GPS (sama seperti HSEFormScreen) ──────────────────────
+const decimalToDMS = (decimal, posDir, negDir) => {
+  const dir = decimal >= 0 ? posDir : negDir;
+  const abs = Math.abs(decimal);
+  const deg = Math.floor(abs);
+  const minFull = (abs - deg) * 60;
+  const min = Math.floor(minFull);
+  const sec = Math.round((minFull - min) * 60);
+  return `${deg}\u00b0${min}'${sec}"${dir}`;
+};
+const formatDMS = (lat, lng) =>
+  `${decimalToDMS(lat, "N", "S")} ${decimalToDMS(lng, "E", "W")}`;
+const formatServerTime = (date) => {
+  const hari  = ["Minggu","Senin","Selasa","Rabu","Kamis","Jumat","Sabtu"][date.getDay()];
+  const bulan = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"][date.getMonth()];
+  const hh = String(date.getHours()).padStart(2,"0");
+  const mm = String(date.getMinutes()).padStart(2,"0");
+  const ss = String(date.getSeconds()).padStart(2,"0");
+  return `${hari}, ${date.getDate()} ${bulan} ${date.getFullYear()} ${hh}:${mm}:${ss}`;
+};
+
+// ── applyOverlay (sama seperti HSEFormScreen — cepat, pakai cachedPos) ────────
+const applyOverlay = async (file, cachedPos) => {
+  let serverTime = new Date();
+  try {
+    const { data } = await supabase.rpc("get_server_time");
+    if (data) serverTime = new Date(data);
+  } catch {}
+
+  const pos = cachedPos || await new Promise((res, rej) =>
+    navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: true, timeout: 15000 })
+  );
+  const { latitude, longitude } = pos.coords;
+  const dmsStr  = formatDMS(latitude, longitude);
+  const timeStr = formatServerTime(serverTime);
+
+  let bitmap;
+  try {
+    bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+  } catch {
+    bitmap = await new Promise((res, rej) => {
+      const i = new Image();
+      i.onload = () => res(i);
+      i.onerror = rej;
+      i.src = URL.createObjectURL(file);
+    });
+  }
+
+  const MAX_DIM = 1600;
+  let targetW = bitmap.width, targetH = bitmap.height;
+  if (Math.max(targetW, targetH) > MAX_DIM) {
+    const scale = MAX_DIM / Math.max(targetW, targetH);
+    targetW = Math.round(targetW * scale);
+    targetH = Math.round(targetH * scale);
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width  = targetW;
+  canvas.height = targetH;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(bitmap, 0, 0, targetW, targetH);
+  if (bitmap.close) bitmap.close();
+
+  const fontSize = Math.max(20, Math.round(targetW * 0.028));
+  const pad      = fontSize * 0.7;
+  const lineH    = fontSize * 1.6;
+  ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+  const boxW = Math.max(ctx.measureText(timeStr).width, ctx.measureText(dmsStr).width) + pad * 2.5;
+  const boxH = lineH * 2 + pad * 1.5;
+  const x    = pad;
+  const y    = canvas.height - boxH - pad;
+  ctx.fillStyle = "rgba(0,0,0,0.60)";
+  ctx.fillRect(x, y, boxW, boxH);
+  ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(timeStr, x + pad, y + pad + fontSize);
+  ctx.fillText(dmsStr,  x + pad, y + pad + fontSize + lineH);
+
+  return new Promise((res) => canvas.toBlob(res, "image/jpeg", 0.9));
+};
+
+// ── uploadFoto (dengan overlay timestamp + GPS) ────────────────────────────────
+const uploadFoto = async (file, kategori, cachedPos) => {
+  const blob = await applyOverlay(file, cachedPos);
+  const fileName = `hse-tl-${kategori}-${Date.now()}.jpg`;
+  const { data, error } = await supabase.storage
+    .from("foto-inspeksi").upload(fileName, blob, { contentType: "image/jpeg" });
+  if (error) throw new Error("Foto gagal diupload: " + error.message);
+  const { data: pub } = supabase.storage.from("foto-inspeksi").getPublicUrl(data.path);
+  return { name: fileName, url: pub.publicUrl, path: data.path };
+};
+
 // ── PhotoLightbox — preview foto full-screen sebelum dikirim ──────────────────
 const PhotoLightbox = ({ url, onClose }) => {
   if (!url) return null;
@@ -58,26 +150,47 @@ const PhotoLightbox = ({ url, onClose }) => {
   );
 };
 
-// ── RepairPhotoSlot — 1 foto bukti perbaikan, dipasangkan dengan 1 foto temuan ──
-const RepairPhotoSlot = ({ label, kategori, foto, onFoto, onPreview, errorFoto }) => {
+// ── RepairPhotoSlot — 1 foto bukti perbaikan + keterangan sendiri,
+//    dipasangkan dengan 1 foto temuan. Timestamp+GPS otomatis di-overlay,
+//    izin kamera & lokasi dicek paralel (cepat, sama seperti HSEFormScreen) ──
+const RepairPhotoSlot = ({ label, kategori, foto, onFoto, keterangan, onKeterangan, onPreview, errorFoto, errorKet }) => {
   const [capState, setCapState] = useState("idle");
+  const [permErr,  setPermErr]  = useState(null);
   const fileInputRef = useRef(null);
+  const cachedPosRef  = useRef(null);
+
+  const handleCaptureClick = async () => {
+    setPermErr(null);
+    setCapState("checking");
+    try {
+      const [, pos] = await Promise.all([
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+          .then((stream) => stream.getTracks().forEach((t) => t.stop())),
+        new Promise((res, rej) =>
+          navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: true, timeout: 15000 })
+        ),
+      ]);
+      cachedPosRef.current = pos;
+      setCapState("idle");
+      fileInputRef.current?.click();
+    } catch {
+      setCapState("idle");
+      setPermErr("Izin kamera/lokasi diperlukan. Aktifkan di pengaturan browser.");
+    }
+  };
 
   const handleFileChange = async (e) => {
     const file = (e.target.files || [])[0];
     if (!file) return;
     setCapState("processing");
     try {
-      const fileName = `hse-tl-${kategori}-${Date.now()}.jpg`;
-      const { data, error } = await supabase.storage
-        .from("foto-inspeksi").upload(fileName, file, { contentType: file.type });
-      if (error) { alert("⚠️ Foto gagal diupload: " + error.message); return; }
-      const { data: pub } = supabase.storage.from("foto-inspeksi").getPublicUrl(data.path);
-      onFoto({ name: fileName, url: pub.publicUrl, path: data.path });
+      const result = await uploadFoto(file, kategori, cachedPosRef.current);
+      onFoto(result);
     } catch (err) {
-      alert("⚠️ Gagal upload foto: " + err.message);
+      alert("⚠️ " + err.message);
     } finally {
       setCapState("idle");
+      cachedPosRef.current = null;
       e.target.value = "";
     }
   };
@@ -87,6 +200,8 @@ const RepairPhotoSlot = ({ label, kategori, foto, onFoto, onPreview, errorFoto }
     onFoto(null);
   };
 
+  const isWorking = capState !== "idle";
+
   return (
     <div style={{
       border: `2px dashed ${errorFoto ? theme.danger : theme.border}`, borderRadius: 10, padding: "10px 12px",
@@ -94,31 +209,56 @@ const RepairPhotoSlot = ({ label, kategori, foto, onFoto, onPreview, errorFoto }
     }}>
       <div style={{ fontSize: 11, color: errorFoto ? theme.danger : theme.textMuted, marginBottom: 8, textAlign: "center" }}>
         {label}
+        <div style={{ marginTop: 2 }}>📷 Kamera belakang · ⏱ Timestamp · 📍 GPS</div>
       </div>
+      {permErr && (
+        <div style={{ marginBottom: 8, padding: "6px 10px", borderRadius: 8, background: theme.dangerLight, color: theme.danger, fontSize: 12, fontWeight: 600 }}>
+          ⛔ {permErr}
+        </div>
+      )}
       <input ref={fileInputRef} type="file" accept="image/*" capture="environment"
         onChange={handleFileChange} style={{ display: "none" }} />
       {foto ? (
-        <div style={{ padding: "8px 10px", background: theme.primaryLight, borderRadius: 8 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <img
-              src={foto.url}
-              alt={foto.name}
-              onClick={() => onPreview?.(foto.url)}
-              style={{ width: 46, height: 46, borderRadius: 6, objectFit: "cover", cursor: "pointer", border: `1px solid ${theme.primary}`, flexShrink: 0 }}
-            />
-            <div style={{ flex: 1, fontSize: 12, color: theme.primary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              ✓ {foto.name}
+        <>
+          <div style={{ padding: "8px 10px", background: theme.primaryLight, borderRadius: 8, marginBottom: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <img
+                src={foto.url}
+                alt={foto.name}
+                onClick={() => onPreview?.(foto.url)}
+                style={{ width: 46, height: 46, borderRadius: 6, objectFit: "cover", cursor: "pointer", border: `1px solid ${theme.primary}`, flexShrink: 0 }}
+              />
+              <div style={{ flex: 1, fontSize: 12, color: theme.primary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                ✓ {foto.name}
+              </div>
+              <div onClick={() => onPreview?.(foto.url)} style={{ cursor: "pointer", fontSize: 12, color: theme.primary, fontWeight: 700, flexShrink: 0 }}>
+                🔍 Lihat
+              </div>
+              <div onClick={removeFoto} style={{ cursor: "pointer", fontWeight: 700, color: theme.danger, flexShrink: 0 }}>✕</div>
             </div>
-            <div onClick={() => onPreview?.(foto.url)} style={{ cursor: "pointer", fontSize: 12, color: theme.primary, fontWeight: 700, flexShrink: 0 }}>
-              🔍 Lihat
-            </div>
-            <div onClick={removeFoto} style={{ cursor: "pointer", fontWeight: 700, color: theme.danger, flexShrink: 0 }}>✕</div>
           </div>
-        </div>
+
+          {/* Keterangan khusus untuk foto perbaikan ini (bukan satu keterangan untuk semua) */}
+          <textarea
+            placeholder="Keterangan perbaikan untuk foto ini (wajib)..."
+            value={keterangan}
+            onChange={(e) => onKeterangan(e.target.value)}
+            style={{
+              width: "100%", padding: "8px 10px", borderRadius: 8,
+              border: `1.5px solid ${errorKet ? theme.danger : theme.border}`,
+              background: errorKet ? theme.dangerLight : theme.surface,
+              color: theme.text, fontSize: 13, fontFamily: "'DM Sans', sans-serif",
+              resize: "none", minHeight: 60, boxSizing: "border-box", outline: "none",
+            }}
+          />
+          {errorKet && (
+            <div style={{ fontSize: 11, color: theme.danger, fontWeight: 600, marginTop: 3 }}>⚠️ Keterangan foto ini wajib diisi.</div>
+          )}
+        </>
       ) : (
-        <Btn onClick={() => fileInputRef.current?.click()} variant="outline"
-          style={{ fontSize: 12, padding: "8px 12px", width: "100%" }} disabled={capState !== "idle"}>
-          {capState === "processing" ? "⏳ Upload..." : "📷 Foto Bukti Perbaikan"}
+        <Btn onClick={handleCaptureClick} variant="outline"
+          style={{ fontSize: 12, padding: "8px 12px", width: "100%" }} disabled={isWorking}>
+          {capState === "checking" ? "🔐 Cek izin..." : capState === "processing" ? "⏳ Memproses..." : "📷 Foto Bukti Perbaikan"}
         </Btn>
       )}
       {errorFoto && (
@@ -129,22 +269,25 @@ const RepairPhotoSlot = ({ label, kategori, foto, onFoto, onPreview, errorFoto }
 };
 
 // ── TindakLanjutDetail HSE ────────────────────────────────────────────────────
-// Tindak lanjut per KENDARAAN. Setiap foto temuan WAJIB dipasangkan 1 foto bukti perbaikan.
+// Tindak lanjut per KENDARAAN. Setiap foto temuan WAJIB dipasangkan 1 foto bukti
+// perbaikan LENGKAP DENGAN keterangannya sendiri (bukan satu keterangan di akhir).
 const TindakLanjutDetail = ({ inspeksi, fotoTemuan, onBack, onSelesai }) => {
-  const [catatan,        setCatatan]        = useState("");
   const [buktiPerbaikan, setBuktiPerbaikan] = useState(() => fotoTemuan.map(() => null));
+  const [ketPerbaikan,   setKetPerbaikan]   = useState(() => fotoTemuan.map(() => ""));
   const [previewUrl,     setPreviewUrl]     = useState(null);
   const [errors,         setErrors]         = useState({});
   const [submitting,     setSubmitting]     = useState(false);
   const [ready,          setReady]          = useState(false);
 
-  // Pulihkan draft (catatan + foto bukti perbaikan) kalau app sempat ke-close
+  // Pulihkan draft (foto + keterangan per foto) kalau app sempat ke-close
   useEffect(() => {
     const draft = loadDraft(inspeksi.id);
     if (draft) {
-      setCatatan(draft.catatan || "");
       if (Array.isArray(draft.buktiPerbaikan) && draft.buktiPerbaikan.length === fotoTemuan.length) {
         setBuktiPerbaikan(draft.buktiPerbaikan);
+      }
+      if (Array.isArray(draft.ketPerbaikan) && draft.ketPerbaikan.length === fotoTemuan.length) {
+        setKetPerbaikan(draft.ketPerbaikan);
       }
     }
     setReady(true);
@@ -154,25 +297,30 @@ const TindakLanjutDetail = ({ inspeksi, fotoTemuan, onBack, onSelesai }) => {
   // Auto-save draft setiap ada perubahan
   useEffect(() => {
     if (!ready) return;
-    saveDraft(inspeksi.id, { catatan, buktiPerbaikan });
-  }, [ready, catatan, buktiPerbaikan, inspeksi.id]);
+    saveDraft(inspeksi.id, { buktiPerbaikan, ketPerbaikan });
+  }, [ready, buktiPerbaikan, ketPerbaikan, inspeksi.id]);
 
   const setFotoAt = (idx) => (foto) => {
     setBuktiPerbaikan((prev) => prev.map((f, i) => i === idx ? foto : f));
   };
+  const setKetAt = (idx) => (val) => {
+    setKetPerbaikan((prev) => prev.map((k, i) => i === idx ? val : k));
+  };
 
   const jumlahLengkap = buktiPerbaikan.filter(Boolean).length;
-  const semuaLengkap  = fotoTemuan.length > 0 && jumlahLengkap === fotoTemuan.length;
+  const semuaLengkap  = fotoTemuan.length > 0
+    && jumlahLengkap === fotoTemuan.length
+    && ketPerbaikan.every((k) => k.trim());
 
   const handleSubmit = async () => {
     const e = {};
-    if (!catatan.trim()) e.catatan = true;
     buktiPerbaikan.forEach((f, i) => {
       if (!f) e[`bukti_${i}`] = true;
+      if (!ketPerbaikan[i]?.trim()) e[`ket_${i}`] = true;
     });
     setErrors(e);
     if (Object.keys(e).length > 0) {
-      alert(`Semua foto bukti perbaikan wajib diunggah (${jumlahLengkap}/${fotoTemuan.length}) dan keterangan tindak lanjut wajib diisi.`);
+      alert(`Semua foto bukti perbaikan beserta keterangannya wajib diisi (${jumlahLengkap}/${fotoTemuan.length}).`);
       return;
     }
 
@@ -180,10 +328,16 @@ const TindakLanjutDetail = ({ inspeksi, fotoTemuan, onBack, onSelesai }) => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
 
+      // Catatan gabungan (untuk kolom "catatan" di tindaklanjut_hse) dirangkai
+      // dari keterangan tiap foto, supaya riwayat tetap tersimpan ringkas.
+      const catatanGabungan = ketPerbaikan
+        .map((k, i) => `Temuan ${i + 1}: ${k.trim()}`)
+        .join("\n");
+
       const { error: tlErr } = await supabase.from("tindaklanjut_hse").insert([{
         inspeksi_hse_id: inspeksi.id,
         user_id:         user.id,
-        catatan:         catatan.trim(),
+        catatan:         catatanGabungan,
         status:          "selesai",
       }]);
       if (tlErr) throw tlErr;
@@ -192,7 +346,7 @@ const TindakLanjutDetail = ({ inspeksi, fotoTemuan, onBack, onSelesai }) => {
         buktiPerbaikan.map((f, i) => ({
           inspeksi_hse_id: inspeksi.id,
           url:             f.url,
-          keterangan:      `Bukti perbaikan untuk temuan ${i + 1}`,
+          keterangan:      `Bukti perbaikan temuan ${i + 1}: ${ketPerbaikan[i].trim()}`,
         }))
       );
       if (fotoErr) throw fotoErr;
@@ -256,44 +410,22 @@ const TindakLanjutDetail = ({ inspeksi, fotoTemuan, onBack, onSelesai }) => {
                   Temuan: "{f.keterangan}"
                 </div>
 
-                {/* Foto bukti perbaikan — wajib, dipasangkan dengan temuan ini */}
+                {/* Foto bukti perbaikan + keterangan sendiri — wajib, dipasangkan dengan temuan ini */}
                 <RepairPhotoSlot
                   label={`Foto bukti perbaikan untuk Temuan ${idx + 1} (wajib)`}
                   kategori={`${inspeksi.nomor_polisi}_${idx}`}
                   foto={buktiPerbaikan[idx]}
                   onFoto={setFotoAt(idx)}
+                  keterangan={ketPerbaikan[idx]}
+                  onKeterangan={setKetAt(idx)}
                   onPreview={setPreviewUrl}
                   errorFoto={!!errors[`bukti_${idx}`]}
+                  errorKet={!!errors[`ket_${idx}`]}
                 />
               </div>
             ))}
           </div>
         )}
-
-        {/* Input tindak lanjut */}
-        <div style={{ padding: 14, borderRadius: 14, background: theme.surface, border: `1.5px solid ${theme.border}` }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: theme.text, marginBottom: 8 }}>
-            Tindak Lanjut yang Dilakukan
-          </div>
-          <textarea
-            placeholder="Jelaskan tindakan perbaikan yang sudah dilakukan..."
-            value={catatan}
-            onChange={(e) => setCatatan(e.target.value)}
-            style={{
-              width: "100%", padding: "10px 12px", borderRadius: 10,
-              border: `1.5px solid ${errors.catatan ? theme.danger : theme.border}`,
-              background: errors.catatan ? theme.dangerLight : theme.surfaceAlt,
-              color: theme.text, fontSize: 13,
-              fontFamily: "'DM Sans', sans-serif",
-              resize: "none", minHeight: 90, boxSizing: "border-box", outline: "none",
-            }}
-          />
-          {errors.catatan && (
-            <div style={{ fontSize: 12, color: theme.danger, fontWeight: 600, marginTop: 4 }}>
-              ⚠️ Keterangan tindak lanjut wajib diisi.
-            </div>
-          )}
-        </div>
       </div>
 
       <div style={{
