@@ -22,6 +22,7 @@ import { supabase }           from "./lib/supabase";
 import { useBreakpoint }      from "./hooks/useBreakpoint";
 import { MOBILE_MAX_WIDTH, DESKTOP_CONTENT_MAX_WIDTH } from "./styles/layout";
 import theme from "./styles/theme";
+import { ThemeProvider } from "./context/ThemeContext";
 
 // Helper normalisasi role — import dari BottomNav supaya konsisten
 import { isTeknisi, isDepot, isHSE, isP1 } from "./components/BottomNav";
@@ -34,7 +35,7 @@ import P1FormScreen        from "./screens/P1FormScreen";
 import P1TindakLanjut      from "./screens/P1TindakLanjut";
 import TeknisiTindakLanjut from "./screens/TeknisiTindakLanjut";
 
-const App = () => {
+const AppInner = () => {
   const [screen, setScreen]                     = useState("login");
   const [role, setRole]                         = useState(null);
   const [loading, setLoading]                   = useState(true);
@@ -416,5 +417,14 @@ const App = () => {
     </div>
   );
 };
+
+// Dibungkus ThemeProvider di sini — satu-satunya perubahan dari App.jsx
+// versi kamu yang sekarang. Semua logic di dalam (AppInner) sama persis,
+// termasuk ExportScreen, AdminKendaraanScreen, dan sidebarScreens/hasSidebar.
+const App = () => (
+  <ThemeProvider>
+    <AppInner />
+  </ThemeProvider>
+);
 
 export default App;

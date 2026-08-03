@@ -63,8 +63,15 @@ const NAV_ITEMS = {
   ],
 };
 
-const BottomNav = ({ active, onNav, role, userName, badges = {} }) => {
+// themeOverride: opsional. Kalau dikirim (oleh Teknisi/HSE yang sudah pakai
+// useTheme()), bottom bar MOBILE ikut tema aktif. Kalau tidak dikirim (mis.
+// Depot), fallback ke `theme` statis (selalu light) — perilaku lama, tidak
+// berubah. Sidebar DESKTOP sengaja tetap hardcode dark (#0B1220) seperti
+// sebelumnya, tidak terpengaruh toggle sama sekali.
+const BottomNav = ({ active, onNav, role, userName, badges = {}, themeOverride, forceMobile = false }) => {
   const isDesktop = useBreakpoint();
+  const t = themeOverride || theme;
+  const showDesktopSidebar = isDesktop && !forceMobile;
 
   // Normalisasi role lama supaya backward compatible
   let normalizedRole = role;
@@ -75,8 +82,8 @@ const BottomNav = ({ active, onNav, role, userName, badges = {} }) => {
   const displayName = userName || DEFAULT_USER_NAME[normalizedRole] || "Pengguna";
   const initials = displayName.slice(0, 2).toUpperCase();
 
-  // ── Mode desktop: sidebar kiri ───────────────────────────────────────
-  if (isDesktop) {
+  // ── Mode desktop: sidebar kiri (selalu dark, tidak ikut toggle) ─────────
+  if (showDesktopSidebar) {
     return (
       <div
         style={{
@@ -176,7 +183,7 @@ const BottomNav = ({ active, onNav, role, userName, badges = {} }) => {
     );
   }
 
-  // ── Mode mobile: bottom nav (tidak berubah) ─────────────────────────
+  // ── Mode mobile: bottom nav — ikut tema aktif lewat `t` ─────────────────
   return (
     <div
       style={{
@@ -186,8 +193,8 @@ const BottomNav = ({ active, onNav, role, userName, badges = {} }) => {
         transform: "translateX(-50%)",
         width: "100%",
         maxWidth: 430,
-        background: theme.surface,
-        borderTop: `1px solid ${theme.border}`,
+        background: t.surface,
+        borderTop: `1px solid ${t.border}`,
         display: "flex",
         zIndex: 100,
         boxShadow: "0 -2px 12px rgba(0,0,0,0.06)",
@@ -206,7 +213,7 @@ const BottomNav = ({ active, onNav, role, userName, badges = {} }) => {
               alignItems: "center",
               padding: "10px 4px 14px",
               cursor: "pointer",
-              color: isActive ? theme.primary : theme.textMuted,
+              color: isActive ? t.primary : t.textMuted,
             }}
           >
             {n.center ? (
@@ -215,7 +222,7 @@ const BottomNav = ({ active, onNav, role, userName, badges = {} }) => {
                   width: 42,
                   height: 42,
                   borderRadius: 14,
-                  background: theme.primary,
+                  background: t.primary,
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
@@ -229,7 +236,7 @@ const BottomNav = ({ active, onNav, role, userName, badges = {} }) => {
               <Icon
                 name={n.icon}
                 size={20}
-                color={isActive ? theme.primary : theme.textMuted}
+                color={isActive ? t.primary : t.textMuted}
               />
             )}
             <div

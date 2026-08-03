@@ -3,13 +3,16 @@ import BottomNav from "../components/BottomNav";
 import Card from "../components/Card";
 import Icon from "../components/Icon";
 import SectionLabel from "../components/SectionLabel";
-import theme from "../styles/theme";
+import ThemeToggle from "../components/ThemeToggle";
+import { useTheme } from "../context/ThemeContext";
 import { supabase } from "../lib/supabase";
-import { useBreakpoint } from "../hooks/useBreakpoint";
-import { SIDEBAR_WIDTH } from "../styles/layout";
+
+// Lebar tampilan dikunci seukuran HP — role ini cuma dipakai di ponsel
+// (sama seperti pola di P1Dashboard.jsx)
+const FRAME_WIDTH = 430;
 
 // ── Helper: label & warna status ──────────────────────────────────────────────
-const statusInfo = (status) => {
+const statusInfo = (status, theme) => {
   if (status === "tidak_lulus") return { label: "Perlu Tindak Lanjut", bg: theme.dangerLight,  color: theme.danger };
   if (status === "selesai")     return { label: "Selesai",             bg: theme.successLight, color: theme.success };
   if (status === "lulus")       return { label: "Lulus",               bg: theme.successLight, color: theme.success };
@@ -34,61 +37,64 @@ const StatCard = ({ value, label, bg, color, onClick }) => (
 );
 
 // ── InspeksiList ──────────────────────────────────────────────────────────────
-const InspeksiList = ({ title, items, onBack }) => (
+// Menerima `theme` sebagai prop supaya ikut tema aktif. Dikunci lebar HP juga.
+const InspeksiList = ({ title, items, onBack, theme }) => (
   <div style={{ minHeight: "100vh", background: theme.bg }}>
-    <div style={{ background: theme.surface, padding: "48px 16px 16px", borderBottom: `1px solid ${theme.border}`, boxShadow: theme.shadow }}>
-      <div onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, cursor: "pointer", color: theme.textSub, fontSize: 13 }}>
-        <Icon name="arrow" size={16} color={theme.textSub} /> Kembali
+    <div style={{ maxWidth: FRAME_WIDTH, margin: "0 auto" }}>
+      <div style={{ background: theme.surface, padding: "48px 16px 16px", borderBottom: `1px solid ${theme.border}`, boxShadow: theme.shadow }}>
+        <div onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, cursor: "pointer", color: theme.textSub, fontSize: 13 }}>
+          <Icon name="arrow" size={16} color={theme.textSub} /> Kembali
+        </div>
+        <div style={{ fontWeight: 800, fontSize: 18, color: theme.text }}>{title}</div>
+        <div style={{ fontSize: 13, color: theme.textMuted, marginTop: 2 }}>{items.length} kendaraan</div>
       </div>
-      <div style={{ fontWeight: 800, fontSize: 18, color: theme.text }}>{title}</div>
-      <div style={{ fontSize: 13, color: theme.textMuted, marginTop: 2 }}>{items.length} kendaraan</div>
-    </div>
-    <div style={{ padding: "20px 16px", paddingBottom: 40 }}>
-      {items.length === 0 ? (
-        <Card style={{ padding: 32, textAlign: "center" }}>
-          <div style={{ fontSize: 32, marginBottom: 12 }}>📋</div>
-          <div style={{ fontSize: 14, color: theme.textMuted }}>Belum ada data</div>
-        </Card>
-      ) : (
-        items.map((insp) => {
-          const si = statusInfo(insp.status);
-          return (
-            <Card key={insp.id} style={{ marginBottom: 12, padding: "14px 16px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <div style={{
-                  width: 44, height: 44, borderRadius: 12, background: theme.primaryLight,
-                  display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-                }}>
-                  <Icon name="car" size={20} color={theme.primary} />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 700, fontSize: 15, color: theme.text }}>{insp.nomor_polisi}</div>
-                  <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>{insp.transportir}</div>
-                  <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 1 }}>
-                    {insp.kapasitas_mt} · {insp.jumlah_kompartemen} kompartemen · {insp.kategori_mt === "merah_putih" ? "MT Merah Putih" : "MT Industri"}
+      <div style={{ padding: "20px 16px", paddingBottom: 40 }}>
+        {items.length === 0 ? (
+          <Card style={{ padding: 32, textAlign: "center", background: theme.surface, borderColor: theme.border }}>
+            <div style={{ fontSize: 32, marginBottom: 12 }}>📋</div>
+            <div style={{ fontSize: 14, color: theme.textMuted }}>Belum ada data</div>
+          </Card>
+        ) : (
+          items.map((insp) => {
+            const si = statusInfo(insp.status, theme);
+            return (
+              <Card key={insp.id} style={{ marginBottom: 12, padding: "14px 16px", background: theme.surface, borderColor: theme.border }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{
+                    width: 44, height: 44, borderRadius: 12, background: theme.primaryLight,
+                    display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                  }}>
+                    <Icon name="car" size={20} color={theme.primary} />
                   </div>
-                  <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 1 }}>
-                    {new Date(insp.created_at).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 700, fontSize: 15, color: theme.text }}>{insp.nomor_polisi}</div>
+                    <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>{insp.transportir}</div>
+                    <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 1 }}>
+                      {insp.kapasitas_mt} · {insp.jumlah_kompartemen} kompartemen · {insp.kategori_mt === "merah_putih" ? "MT Merah Putih" : "MT Industri"}
+                    </div>
+                    <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 1 }}>
+                      {new Date(insp.created_at).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}
+                    </div>
+                  </div>
+                  <div style={{
+                    fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 20,
+                    background: si.bg, color: si.color,
+                  }}>
+                    {si.label}
                   </div>
                 </div>
-                <div style={{
-                  fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 20,
-                  background: si.bg, color: si.color,
-                }}>
-                  {si.label}
-                </div>
-              </div>
-            </Card>
-          );
-        })
-      )}
+              </Card>
+            );
+          })
+        )}
+      </div>
     </div>
   </div>
 );
 
 // ── HSEDashboard ──────────────────────────────────────────────────────────────
 const HSEDashboard = ({ role, onNav, onLogout }) => {
-  const isDesktop = useBreakpoint();
+  const { theme } = useTheme();
   const [view,        setView]        = useState("dashboard");
   const [currentUser, setCurrentUser] = useState(null);
   const [inspeksiAll, setInspeksiAll] = useState([]);
@@ -121,9 +127,9 @@ const HSEDashboard = ({ role, onNav, onLogout }) => {
   const perluTindak = inspeksiAll.filter((i) => i.status === "tidak_lulus");
   const sudahBeres  = inspeksiAll.filter((i) => i.status === "lulus" || i.status === "selesai");
 
-  if (view === "list-all")     return <InspeksiList title="Total Diperiksa"        items={inspeksiAll} onBack={() => setView("dashboard")} />;
-  if (view === "list-perlu")   return <InspeksiList title="Perlu Ditindaklanjuti"   items={perluTindak} onBack={() => setView("dashboard")} />;
-  if (view === "list-selesai") return <InspeksiList title="Sudah Ditindaklanjuti"   items={sudahBeres}  onBack={() => setView("dashboard")} />;
+  if (view === "list-all")     return <InspeksiList title="Total Diperiksa"        items={inspeksiAll} onBack={() => setView("dashboard")} theme={theme} />;
+  if (view === "list-perlu")   return <InspeksiList title="Perlu Ditindaklanjuti"   items={perluTindak} onBack={() => setView("dashboard")} theme={theme} />;
+  if (view === "list-selesai") return <InspeksiList title="Sudah Ditindaklanjuti"   items={sudahBeres}  onBack={() => setView("dashboard")} theme={theme} />;
 
   if (loading) {
     return (
@@ -134,11 +140,8 @@ const HSEDashboard = ({ role, onNav, onLogout }) => {
   }
 
   return (
-    <div style={{
-      minHeight: "100vh", background: theme.bg,
-      paddingBottom: isDesktop ? 0 : 80,
-      marginLeft: isDesktop ? SIDEBAR_WIDTH : 0,
-    }}>
+    <div style={{ minHeight: "100vh", background: theme.bg }}>
+    <div style={{ maxWidth: FRAME_WIDTH, margin: "0 auto", minHeight: "100vh", paddingBottom: 80 }}>
       {/* Header */}
       <div style={{ background: theme.surface, padding: "48px 20px 20px", borderBottom: `1px solid ${theme.border}`, boxShadow: theme.shadow }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -149,8 +152,11 @@ const HSEDashboard = ({ role, onNav, onLogout }) => {
               HSE
             </div>
           </div>
-          <div onClick={onLogout} style={{ cursor: "pointer", padding: 10, borderRadius: 12, background: theme.surfaceAlt }}>
-            <Icon name="logout" size={18} color={theme.textSub} />
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <ThemeToggle />
+            <div onClick={onLogout} style={{ cursor: "pointer", padding: 10, borderRadius: 12, background: theme.surfaceAlt }}>
+              <Icon name="logout" size={18} color={theme.textSub} />
+            </div>
           </div>
         </div>
       </div>
@@ -171,7 +177,8 @@ const HSEDashboard = ({ role, onNav, onLogout }) => {
         </div>
       </div>
 
-      <BottomNav active="dashboard" onNav={onNav} role={role} />
+      <BottomNav active="dashboard" onNav={onNav} role={role} themeOverride={theme} forceMobile />
+    </div>
     </div>
   );
 };
