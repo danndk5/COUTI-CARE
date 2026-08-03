@@ -18,6 +18,18 @@ const formatServerTime = (date) => {
   const B = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"][date.getMonth()];
   return `${H}, ${date.getDate()} ${B} ${date.getFullYear()} ${String(date.getHours()).padStart(2,"0")}:${String(date.getMinutes()).padStart(2,"0")}:${String(date.getSeconds()).padStart(2,"0")}`;
 };
+const formatTanggal = (dateStr) => {
+  if (!dateStr) return "-";
+  return new Date(dateStr).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" });
+};
+
+// ── InfoRow — tampilan data kendaraan readonly ───────────────────────────────
+const InfoRow = ({ label, value, highlight }) => (
+  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: `1px solid ${theme.border}` }}>
+    <div style={{ fontSize: 12, color: theme.textMuted }}>{label}</div>
+    <div style={{ fontSize: 13, fontWeight: 600, color: highlight ? theme.danger : theme.text, textAlign: "right", maxWidth: "60%" }}>{value || "-"}</div>
+  </div>
+);
 
 // ── CameraCapture ─────────────────────────────────────────────────────────────
 const CameraCapture = ({ onFile, fotoUrl, onRemove, errorFoto }) => {
@@ -107,7 +119,7 @@ const CameraCapture = ({ onFile, fotoUrl, onRemove, errorFoto }) => {
 };
 
 // ── Satu item temuan ──────────────────────────────────────────────────────────
-const TemuanItem = ({ idx, item, onChange, onRemove, showRemove, totalTemuan }) => {
+const TemuanItem = ({ idx, item, onChange, onRemove, showRemove }) => {
   const set = (k) => (v) => onChange(idx, k, v);
   const handleFile = (fd) => onChange(idx, "foto", fd);
   const handleRemoveFoto = async () => {
@@ -167,18 +179,14 @@ const TemuanItem = ({ idx, item, onChange, onRemove, showRemove, totalTemuan }) 
 
 // ── P1FormScreen ──────────────────────────────────────────────────────────────
 const P1FormScreen = ({ onBack, onNav }) => {
-  const [step,        setStep]        = useState(1);
+  const [step,        setStep]        = useState(1); // 1=Kendaraan, 2=Temuan
   const [currentUser, setCurrentUser] = useState(null);
   const [submitting,  setSubmitting]  = useState(false);
 
-  // Data kendaraan
-  const [nopol,       setNopol]       = useState("");
-  const [kapasitas,   setKapasitas]   = useState("");
-  const [kompartemen, setKompartemen] = useState("");
-  const [transportir, setTransportir] = useState("");
-  const [kategoriMT,  setKategoriMT]  = useState("");
-  const [lookupStatus,setLookupStatus]= useState("idle");
-  const [isAutoFilled,setIsAutoFilled]= useState(false);
+  // Data kendaraan — SEMUA dari database, tidak ada input manual lagi
+  const [nopol,         setNopol]         = useState("");
+  const [kendaraanData, setKendaraanData] = useState(null); // hasil lookup lengkap
+  const [lookupStatus,  setLookupStatus]  = useState("idle"); // idle|loading|found|notfound
   const lookupTimer = useRef(null);
 
   // Temuan (dinamis)
@@ -190,34 +198,28 @@ const P1FormScreen = ({ onBack, onNav }) => {
     supabase.auth.getUser().then(({ data: { user } }) => { if (user) setCurrentUser(user.id); });
   }, []);
 
-  // Auto-fill dari nomor polisi
+  // Auto-fill dari nomor polisi — lookup lengkap termasuk kategori_mt
   const handleNopolChange = useCallback((val) => {
-    setNopol(val);
-    setKapasitas(""); setKompartemen(""); setTransportir(""); setKategoriMT("");
-    setIsAutoFilled(false); setLookupStatus("idle");
+    setNopol(val.toUpperCase());
+    setKendaraanData(null);
+    setLookupStatus("idle");
     if (lookupTimer.current) clearTimeout(lookupTimer.current);
     if (!val.trim()) return;
     lookupTimer.current = setTimeout(async () => {
       setLookupStatus("loading");
       try {
         const { data } = await supabase.from("kendaraan")
-          .select("transportir, kapasitas_mt, jumlah_kompartemen, kategori_mt")
-          .eq("nomor_polisi", val.trim()).maybeSingle();
+          .select("nomor_polisi, transportir, kapasitas_mt, jumlah_kompartemen, kategori_mt, masa_berlaku_head_truck, masa_berlaku_tangki")
+          .eq("nomor_polisi", val.trim().toUpperCase()).maybeSingle();
         if (data) {
-          setTransportir(data.transportir || "");
-          setKapasitas(data.kapasitas_mt || "");
-          setKompartemen(String(data.jumlah_kompartemen || ""));
-          setKategoriMT(data.kategori_mt || "");
-          setIsAutoFilled(true); setLookupStatus("found");
-        } else { setLookupStatus("new"); }
-      } catch { setLookupStatus("new"); }
+          setKendaraanData(data);
+          setLookupStatus("found");
+        } else {
+          setLookupStatus("notfound");
+        }
+      } catch { setLookupStatus("notfound"); }
     }, 600);
   }, []);
-
-  const resetAutoFill = () => {
-    setIsAutoFilled(false); setLookupStatus("new");
-    setKapasitas(""); setKompartemen(""); setTransportir(""); setKategoriMT("");
-  };
 
   // Temuan handlers
   const updateTemuan = (idx, key, val) =>
@@ -231,17 +233,14 @@ const P1FormScreen = ({ onBack, onNav }) => {
     setTemuan(prev => prev.filter((_, i) => i !== idx));
   };
 
-  const validateStep1 = () => {
-    if (!nopol.trim())       { alert("Nomor Polisi wajib diisi!"); return false; }
-    if (!kapasitas.trim())   { alert("Kapasitas MT wajib diisi!"); return false; }
-    if (!kompartemen.trim()) { alert("Jumlah Kompartemen wajib diisi!"); return false; }
-    if (!transportir.trim()) { alert("Transportir wajib diisi!"); return false; }
-    return true;
-  };
-
-  const validateStep2 = () => {
-    if (!kategoriMT) { alert("Pilih kategori MT terlebih dahulu!"); return false; }
-    return true;
+  const handleNextStep1 = () => {
+    if (!nopol.trim()) { alert("Nomor Polisi wajib diisi!"); return; }
+    if (lookupStatus === "loading") { alert("Sedang mencari data kendaraan, tunggu sebentar..."); return; }
+    if (lookupStatus === "notfound" || !kendaraanData) {
+      alert("Nomor Polisi tidak ditemukan di database. Hubungi admin Depot untuk mendaftarkan kendaraan ini.");
+      return;
+    }
+    setStep(2);
   };
 
   const validateTemuan = () => {
@@ -262,14 +261,16 @@ const P1FormScreen = ({ onBack, onNav }) => {
     if (!validateTemuan()) return;
     setSubmitting(true);
     try {
-      // Insert inspeksi_p1
+      // Insert inspeksi_p1 — semua data kendaraan dari database (kendaraanData)
       const { data: insp, error: inspErr } = await supabase.from("inspeksi_p1").insert([{
         user_id: currentUser,
-        nomor_polisi: nopol.trim(),
-        kapasitas_mt: kapasitas.trim(),
-        jumlah_kompartemen: parseInt(kompartemen) || 0,
-        transportir: transportir.trim(),
-        kategori_mt: kategoriMT,
+        nomor_polisi: nopol.trim().toUpperCase(),
+        kapasitas_mt: kendaraanData.kapasitas_mt,
+        jumlah_kompartemen: kendaraanData.jumlah_kompartemen,
+        transportir: kendaraanData.transportir,
+        kategori_mt: kendaraanData.kategori_mt,
+        is_submitted: true,
+        submitted_at: new Date().toISOString(),
         status: "baru",
       }]).select().single();
       if (inspErr) throw inspErr;
@@ -277,30 +278,18 @@ const P1FormScreen = ({ onBack, onNav }) => {
       // Insert setiap temuan + foto
       for (const t of temuan) {
         const { data: tv, error: tvErr } = await supabase.from("inspeksi_p1_temuan").insert([{
-          inspeksi_id: insp.id,
+          inspeksi_p1_id: insp.id,
           judul: t.judul,
           keterangan: t.keterangan,
-          status: "baru",
         }]).select().single();
         if (tvErr) throw tvErr;
         if (t.foto?.url) {
           await supabase.from("foto_inspeksi_p1").insert([{
-            inspeksi_id: insp.id,
             temuan_id: tv.id,
             url: t.foto.url,
           }]);
         }
       }
-
-      // Upsert kendaraan untuk auto-fill berikutnya
-      await supabase.from("kendaraan").upsert({
-        nomor_polisi: nopol.trim(),
-        transportir: transportir.trim(),
-        kapasitas_mt: kapasitas.trim(),
-        jumlah_kompartemen: parseInt(kompartemen) || 0,
-        kategori_mt: kategoriMT,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: "nomor_polisi" });
 
       alert("✓ Laporan cek random berhasil dikirim!");
       onNav("dashboard");
@@ -311,13 +300,13 @@ const P1FormScreen = ({ onBack, onNav }) => {
     }
   };
 
-  const STEPS = ["Kendaraan", "Kategori MT", "Temuan"];
+  const STEPS = ["Kendaraan", "Temuan"];
 
   return (
     <div style={{ minHeight: "100vh", background: theme.bg, display: "flex", flexDirection: "column" }}>
       {/* Header */}
       <div style={{ background: theme.surface, padding: "48px 16px 16px", borderBottom: `1px solid ${theme.border}`, boxShadow: theme.shadow }}>
-        <div onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, cursor: "pointer", color: theme.textSub, fontSize: 13 }}>
+        <div onClick={() => { if (step > 1) setStep(1); else onBack(); }} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, cursor: "pointer", color: theme.textSub, fontSize: 13 }}>
           <Icon name="arrow" size={16} color={theme.textSub} /> Kembali
         </div>
         <div style={{ fontWeight: 800, fontSize: 18, color: theme.text, marginBottom: 16 }}>Pengecekan / Temuan</div>
@@ -340,59 +329,41 @@ const P1FormScreen = ({ onBack, onNav }) => {
       {/* Content */}
       <div style={{ flex: 1, overflowY: "auto", padding: "20px 16px", paddingBottom: 90 }}>
 
-        {/* Step 1 — Data Kendaraan */}
+        {/* Step 1 — Data Kendaraan (readonly, auto-fill dari database) */}
         {step === 1 && (
           <>
             <SectionLabel>Data Kendaraan</SectionLabel>
             <div style={{ background: theme.surface, borderRadius: 14, padding: 16, border: `1px solid ${theme.border}` }}>
               <Input label="Nomor Polisi" placeholder="B 1234 XY" value={nopol} onChange={handleNopolChange} />
 
-              {lookupStatus === "loading" && <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 10 }}>🔍 Mencari data kendaraan...</div>}
-              {lookupStatus === "found"   && <div style={{ fontSize: 12, color: theme.success, fontWeight: 600, marginBottom: 10 }}>✅ Data kendaraan ditemukan — terisi otomatis</div>}
-              {lookupStatus === "new"     && <div style={{ fontSize: 12, color: "#D97706", fontWeight: 600, marginBottom: 10 }}>🆕 Kendaraan baru — isi manual, data tersimpan otomatis</div>}
+              {lookupStatus === "loading" && (
+                <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 10 }}>🔍 Mencari data kendaraan...</div>
+              )}
+              {lookupStatus === "notfound" && (
+                <div style={{ fontSize: 12, color: theme.danger, fontWeight: 600, marginBottom: 12, padding: "8px 12px", background: theme.dangerLight, borderRadius: 8 }}>
+                  ⚠️ Nomor Polisi tidak ditemukan. Hubungi admin Depot untuk mendaftarkan kendaraan ini.
+                </div>
+              )}
 
-              <Input label="Kapasitas MT" placeholder="Contoh: 16 KL" value={kapasitas} onChange={isAutoFilled ? undefined : setKapasitas} disabled={isAutoFilled} />
-              <Input label="Jumlah Kompartemen" placeholder="Contoh: 3" value={kompartemen} onChange={isAutoFilled ? undefined : setKompartemen} disabled={isAutoFilled} />
-              <Input label="Transportir" placeholder="PT. ..." value={transportir} onChange={isAutoFilled ? undefined : setTransportir} disabled={isAutoFilled} />
-
-              {isAutoFilled && (
-                <div style={{ fontSize: 11, color: theme.textMuted, marginTop: -8, marginBottom: 12 }}>
-                  Terisi otomatis.{" "}
-                  <span onClick={resetAutoFill} style={{ color: "#7C3AED", cursor: "pointer", textDecoration: "underline" }}>Edit manual</span>
+              {lookupStatus === "found" && kendaraanData && (
+                <div style={{ marginBottom: 8 }}>
+                  <div style={{ fontSize: 11, color: theme.success, fontWeight: 700, marginBottom: 10 }}>
+                    ✅ Data kendaraan ditemukan
+                  </div>
+                  <InfoRow label="Transportir" value={kendaraanData.transportir} />
+                  <InfoRow label="Kapasitas MT" value={kendaraanData.kapasitas_mt} />
+                  <InfoRow label="Jumlah Kompartemen" value={kendaraanData.jumlah_kompartemen ? `${kendaraanData.jumlah_kompartemen} kompartemen` : null} />
+                  <InfoRow label="Kategori MT" value={kendaraanData.kategori_mt === "merah_putih" ? "MT Merah Putih" : kendaraanData.kategori_mt === "industri" ? "MT Industri" : kendaraanData.kategori_mt} />
+                  <InfoRow label="Masa Berlaku Head Truck" value={formatTanggal(kendaraanData.masa_berlaku_head_truck)} />
+                  <InfoRow label="Masa Berlaku Tangki" value={formatTanggal(kendaraanData.masa_berlaku_tangki)} />
                 </div>
               )}
             </div>
           </>
         )}
 
-        {/* Step 2 — Kategori MT */}
+        {/* Step 2 — Form Temuan */}
         {step === 2 && (
-          <>
-            <SectionLabel>Kategori Kendaraan</SectionLabel>
-            <div style={{ fontSize: 13, color: theme.textMuted, marginBottom: 16 }}>Pilih jenis MT berdasarkan peruntukannya.</div>
-            {[
-              { val: "merah_putih", label: "MT Merah Putih", desc: "Untuk distribusi BBM ke SPBU", emoji: "🔴" },
-              { val: "industri",    label: "MT Industri",    desc: "Untuk industri, pabrik, tambang dll", emoji: "🏭" },
-            ].map((k) => (
-              <div key={k.val} onClick={() => setKategoriMT(k.val)} style={{
-                padding: "18px 16px", borderRadius: 14, marginBottom: 12, cursor: "pointer",
-                border: `2px solid ${kategoriMT === k.val ? "#7C3AED" : theme.border}`,
-                background: kategoriMT === k.val ? "#EDE9FE" : theme.surface,
-              }}>
-                <div style={{ fontWeight: 700, fontSize: 15, color: kategoriMT === k.val ? "#7C3AED" : theme.text }}>{k.emoji} {k.label}</div>
-                <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 4 }}>{k.desc}</div>
-              </div>
-            ))}
-            {isAutoFilled && kategoriMT && (
-              <div style={{ fontSize: 12, color: theme.success, fontWeight: 600, padding: "8px 12px", borderRadius: 8, background: theme.successLight }}>
-                ✅ Kategori terisi otomatis: {kategoriMT === "merah_putih" ? "MT Merah Putih" : "MT Industri"}
-              </div>
-            )}
-          </>
-        )}
-
-        {/* Step 3 — Form Temuan */}
-        {step === 3 && (
           <>
             <SectionLabel>Form Temuan</SectionLabel>
             <div style={{ fontSize: 13, color: theme.textMuted, marginBottom: 16 }}>
@@ -405,7 +376,6 @@ const P1FormScreen = ({ onBack, onNav }) => {
                 onChange={updateTemuan}
                 onRemove={removeTemuan}
                 showRemove={temuan.length > 1}
-                totalTemuan={temuan.length}
               />
             ))}
 
@@ -432,9 +402,8 @@ const P1FormScreen = ({ onBack, onNav }) => {
             ← Kembali
           </Btn>
         )}
-        {step === 1 && <Btn onClick={() => { if (validateStep1()) setStep(2); }} variant="primary" disabled={submitting}>Lanjut →</Btn>}
-        {step === 2 && <Btn onClick={() => { if (validateStep2()) setStep(3); }} variant="primary" disabled={submitting}>Lanjut →</Btn>}
-        {step === 3 && (
+        {step === 1 && <Btn onClick={handleNextStep1} variant="primary" disabled={submitting || lookupStatus === "loading"}>Lanjut →</Btn>}
+        {step === 2 && (
           <Btn onClick={handleSubmit} variant="primary" icon="check" disabled={submitting}>
             {submitting ? "Menyimpan..." : "Simpan & Kirim"}
           </Btn>
