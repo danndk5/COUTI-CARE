@@ -47,12 +47,13 @@ const NAV_ITEMS = {
     { id: "history",     label: "Riwayat",     icon: "history" },
     { id: "maintenance", label: "Maintenance", icon: "wrench"  },
   ],
-  // Beranda | Pengecekan | Tindak Lanjut | Riwayat
+  // Beranda | Pengecekan | Tindak Lanjut
+  // (Riwayat sengaja dihapus khusus untuk HSE — datanya sudah tercakup
+  // di kartu Beranda: Total Diperiksa, Perlu Ditindaklanjuti, Sudah Ditindaklanjuti)
   hse: [
     { id: "dashboard",      label: "Beranda",        icon: "home"    },
     { id: "form",           label: "Pengecekan",     icon: "plus",  center: true },
     { id: "tindak-lanjut",  label: "Tindak Lanjut",  icon: "wrench" },
-    { id: "history",        label: "Riwayat",        icon: "history" },
   ],
   // Beranda | Pengecekan | Tindak Lanjut | Riwayat
   p1: [
