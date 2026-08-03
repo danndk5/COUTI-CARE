@@ -9,26 +9,71 @@ import { supabase } from "../lib/supabase";
 import { useBreakpoint } from "../hooks/useBreakpoint";
 import { SIDEBAR_WIDTH } from "../styles/layout";
 
-// ── CameraCaptureMini ─────────────────────────────────────────────────────────
-const CameraCaptureMini = ({ kategori, onPhotos }) => {
-  const [photos,   setPhotos]   = useState([]);
+// ── Draft persistence per inspeksi — agar data tidak hilang kalau app ke-close ──
+const draftKey = (inspeksiId) => `hse_tl_draft_${inspeksiId}`;
+const saveDraft = (inspeksiId, data) => {
+  try { localStorage.setItem(draftKey(inspeksiId), JSON.stringify(data)); } catch {}
+};
+const loadDraft = (inspeksiId) => {
+  try {
+    const raw = localStorage.getItem(draftKey(inspeksiId));
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+};
+const clearDraft = (inspeksiId) => {
+  try { localStorage.removeItem(draftKey(inspeksiId)); } catch {}
+};
+
+// ── PhotoLightbox — preview foto full-screen sebelum dikirim ──────────────────
+const PhotoLightbox = ({ url, onClose }) => {
+  if (!url) return null;
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, background: "rgba(0,0,0,0.92)", zIndex: 9999,
+        display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
+      }}
+    >
+      <div
+        onClick={onClose}
+        style={{
+          position: "absolute", top: 44, right: 20, color: "#fff", fontSize: 26,
+          fontWeight: 700, cursor: "pointer", width: 36, height: 36, borderRadius: 18,
+          background: "rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center",
+        }}
+      >
+        ✕
+      </div>
+      <div style={{ position: "absolute", top: 46, left: 20, color: "#fff", fontSize: 12, opacity: 0.8 }}>
+        Ketuk di mana saja untuk menutup
+      </div>
+      <img
+        src={url}
+        alt="Preview foto"
+        onClick={(e) => e.stopPropagation()}
+        style={{ maxWidth: "100%", maxHeight: "100%", borderRadius: 10, objectFit: "contain" }}
+      />
+    </div>
+  );
+};
+
+// ── RepairPhotoSlot — 1 foto bukti perbaikan, dipasangkan dengan 1 foto temuan ──
+const RepairPhotoSlot = ({ label, kategori, foto, onFoto, onPreview, errorFoto }) => {
   const [capState, setCapState] = useState("idle");
   const fileInputRef = useRef(null);
 
   const handleFileChange = async (e) => {
-    const files = Array.from(e.target.files || []);
-    if (!files.length) return;
+    const file = (e.target.files || [])[0];
+    if (!file) return;
     setCapState("processing");
     try {
-      const file     = files[0];
       const fileName = `hse-tl-${kategori}-${Date.now()}.jpg`;
       const { data, error } = await supabase.storage
         .from("foto-inspeksi").upload(fileName, file, { contentType: file.type });
       if (error) { alert("⚠️ Foto gagal diupload: " + error.message); return; }
       const { data: pub } = supabase.storage.from("foto-inspeksi").getPublicUrl(data.path);
-      const newPhoto = { name: fileName, url: pub.publicUrl, path: data.path };
-      setPhotos((p) => [...p, newPhoto]);
-      onPhotos((p) => [...p, { kategori, url: newPhoto.url, path: newPhoto.path }]);
+      onFoto({ name: fileName, url: pub.publicUrl, path: data.path });
     } catch (err) {
       alert("⚠️ Gagal upload foto: " + err.message);
     } finally {
@@ -37,58 +82,97 @@ const CameraCaptureMini = ({ kategori, onPhotos }) => {
     }
   };
 
-  const removePhoto = async (path) => {
-    await supabase.storage.from("foto-inspeksi").remove([path]);
-    setPhotos((p) => p.filter((x) => x.path !== path));
-    onPhotos((p) => p.filter((x) => x.path !== path));
+  const removeFoto = async () => {
+    if (foto?.path) await supabase.storage.from("foto-inspeksi").remove([foto.path]).catch(() => {});
+    onFoto(null);
   };
 
   return (
-    <div style={{ marginTop: 10 }}>
+    <div style={{
+      border: `2px dashed ${errorFoto ? theme.danger : theme.border}`, borderRadius: 10, padding: "10px 12px",
+      background: errorFoto ? theme.dangerLight : "transparent", marginTop: 8,
+    }}>
+      <div style={{ fontSize: 11, color: errorFoto ? theme.danger : theme.textMuted, marginBottom: 8, textAlign: "center" }}>
+        {label}
+      </div>
       <input ref={fileInputRef} type="file" accept="image/*" capture="environment"
         onChange={handleFileChange} style={{ display: "none" }} />
-      <Btn onClick={() => fileInputRef.current?.click()} variant="outline"
-        style={{ fontSize: 12, padding: "7px 12px", width: "100%" }}
-        disabled={capState !== "idle"}>
-        {capState === "processing" ? "⏳ Upload..." : "📷 Foto Bukti Perbaikan"}
-      </Btn>
-      {photos.length > 0 && (
-        <div style={{ marginTop: 8 }}>
-          {photos.map((p) => (
-            <div key={p.path} style={{ marginBottom: 8 }}>
-              <img src={p.url} alt="bukti perbaikan"
-                style={{ width: "100%", maxHeight: 180, objectFit: "cover", borderRadius: 8, marginBottom: 4 }} />
-              <div style={{
-                display: "flex", alignItems: "center", justifyContent: "space-between",
-                padding: "6px 10px", background: theme.primaryLight, borderRadius: 8, fontSize: 11, color: theme.primary,
-              }}>
-                <span>✓ {p.name}</span>
-                <div onClick={() => removePhoto(p.path)}
-                  style={{ cursor: "pointer", fontWeight: 700, color: theme.danger }}>✕</div>
-              </div>
+      {foto ? (
+        <div style={{ padding: "8px 10px", background: theme.primaryLight, borderRadius: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <img
+              src={foto.url}
+              alt={foto.name}
+              onClick={() => onPreview?.(foto.url)}
+              style={{ width: 46, height: 46, borderRadius: 6, objectFit: "cover", cursor: "pointer", border: `1px solid ${theme.primary}`, flexShrink: 0 }}
+            />
+            <div style={{ flex: 1, fontSize: 12, color: theme.primary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              ✓ {foto.name}
             </div>
-          ))}
+            <div onClick={() => onPreview?.(foto.url)} style={{ cursor: "pointer", fontSize: 12, color: theme.primary, fontWeight: 700, flexShrink: 0 }}>
+              🔍 Lihat
+            </div>
+            <div onClick={removeFoto} style={{ cursor: "pointer", fontWeight: 700, color: theme.danger, flexShrink: 0 }}>✕</div>
+          </div>
         </div>
+      ) : (
+        <Btn onClick={() => fileInputRef.current?.click()} variant="outline"
+          style={{ fontSize: 12, padding: "8px 12px", width: "100%" }} disabled={capState !== "idle"}>
+          {capState === "processing" ? "⏳ Upload..." : "📷 Foto Bukti Perbaikan"}
+        </Btn>
+      )}
+      {errorFoto && (
+        <div style={{ marginTop: 6, fontSize: 11, color: theme.danger, fontWeight: 600 }}>⚠️ Foto bukti perbaikan wajib diambil.</div>
       )}
     </div>
   );
 };
 
 // ── TindakLanjutDetail HSE ────────────────────────────────────────────────────
-// Sekarang tindak lanjut per KENDARAAN (bukan per kompartemen).
-// fotoTemuan = foto-foto temuan yang diambil saat pengecekan awal (read-only, dengan keterangan).
+// Tindak lanjut per KENDARAAN. Setiap foto temuan WAJIB dipasangkan 1 foto bukti perbaikan.
 const TindakLanjutDetail = ({ inspeksi, fotoTemuan, onBack, onSelesai }) => {
-  const [catatan,    setCatatan]    = useState("");
-  const [buktiFoto,  setBuktiFoto]  = useState([]);
-  const [errors,     setErrors]     = useState({});
-  const [submitting, setSubmitting] = useState(false);
+  const [catatan,        setCatatan]        = useState("");
+  const [buktiPerbaikan, setBuktiPerbaikan] = useState(() => fotoTemuan.map(() => null));
+  const [previewUrl,     setPreviewUrl]     = useState(null);
+  const [errors,         setErrors]         = useState({});
+  const [submitting,     setSubmitting]     = useState(false);
+  const [ready,          setReady]          = useState(false);
+
+  // Pulihkan draft (catatan + foto bukti perbaikan) kalau app sempat ke-close
+  useEffect(() => {
+    const draft = loadDraft(inspeksi.id);
+    if (draft) {
+      setCatatan(draft.catatan || "");
+      if (Array.isArray(draft.buktiPerbaikan) && draft.buktiPerbaikan.length === fotoTemuan.length) {
+        setBuktiPerbaikan(draft.buktiPerbaikan);
+      }
+    }
+    setReady(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inspeksi.id]);
+
+  // Auto-save draft setiap ada perubahan
+  useEffect(() => {
+    if (!ready) return;
+    saveDraft(inspeksi.id, { catatan, buktiPerbaikan });
+  }, [ready, catatan, buktiPerbaikan, inspeksi.id]);
+
+  const setFotoAt = (idx) => (foto) => {
+    setBuktiPerbaikan((prev) => prev.map((f, i) => i === idx ? foto : f));
+  };
+
+  const jumlahLengkap = buktiPerbaikan.filter(Boolean).length;
+  const semuaLengkap  = fotoTemuan.length > 0 && jumlahLengkap === fotoTemuan.length;
 
   const handleSubmit = async () => {
     const e = {};
     if (!catatan.trim()) e.catatan = true;
+    buktiPerbaikan.forEach((f, i) => {
+      if (!f) e[`bukti_${i}`] = true;
+    });
     setErrors(e);
     if (Object.keys(e).length > 0) {
-      alert("Keterangan tindak lanjut wajib diisi.");
+      alert(`Semua foto bukti perbaikan wajib diunggah (${jumlahLengkap}/${fotoTemuan.length}) dan keterangan tindak lanjut wajib diisi.`);
       return;
     }
 
@@ -96,7 +180,6 @@ const TindakLanjutDetail = ({ inspeksi, fotoTemuan, onBack, onSelesai }) => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
 
-      // Simpan 1 catatan tindak lanjut untuk kendaraan ini
       const { error: tlErr } = await supabase.from("tindaklanjut_hse").insert([{
         inspeksi_hse_id: inspeksi.id,
         user_id:         user.id,
@@ -105,19 +188,18 @@ const TindakLanjutDetail = ({ inspeksi, fotoTemuan, onBack, onSelesai }) => {
       }]);
       if (tlErr) throw tlErr;
 
-      // Simpan foto bukti perbaikan
-      if (buktiFoto.length > 0) {
-        await supabase.from("foto_inspeksi_hse").insert(
-          buktiFoto.map((p) => ({
-            inspeksi_hse_id: inspeksi.id,
-            url:             p.url,
-            keterangan:      "Bukti perbaikan",
-          }))
-        );
-      }
+      const { error: fotoErr } = await supabase.from("foto_inspeksi_hse").insert(
+        buktiPerbaikan.map((f, i) => ({
+          inspeksi_hse_id: inspeksi.id,
+          url:             f.url,
+          keterangan:      `Bukti perbaikan untuk temuan ${i + 1}`,
+        }))
+      );
+      if (fotoErr) throw fotoErr;
 
-      // Update status inspeksi jadi selesai
       await supabase.from("inspeksi_hse").update({ status: "selesai" }).eq("id", inspeksi.id);
+
+      clearDraft(inspeksi.id);
 
       alert("✅ Tindak lanjut berhasil disimpan!");
       onSelesai();
@@ -148,7 +230,7 @@ const TindakLanjutDetail = ({ inspeksi, fotoTemuan, onBack, onSelesai }) => {
           {" · "}{new Date(inspeksi.created_at).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}
         </div>
 
-        <SectionLabel>Temuan Uji Kedap ({fotoTemuan.length} foto)</SectionLabel>
+        <SectionLabel>Temuan Uji Kedap ({fotoTemuan.length} foto) — Bukti Perbaikan ({jumlahLengkap}/{fotoTemuan.length})</SectionLabel>
 
         {fotoTemuan.length === 0 ? (
           <Card style={{ padding: 20, textAlign: "center", marginBottom: 20 }}>
@@ -156,16 +238,33 @@ const TindakLanjutDetail = ({ inspeksi, fotoTemuan, onBack, onSelesai }) => {
           </Card>
         ) : (
           <div style={{ marginBottom: 20 }}>
-            {fotoTemuan.map((f) => (
+            {fotoTemuan.map((f, idx) => (
               <div key={f.id} style={{
-                marginBottom: 12, padding: 12, borderRadius: 12,
+                marginBottom: 14, padding: 12, borderRadius: 12,
                 background: theme.surface, border: `1.5px solid ${theme.danger}`,
               }}>
-                <img src={f.url} alt="temuan"
-                  style={{ width: "100%", maxHeight: 220, objectFit: "cover", borderRadius: 8, marginBottom: 8 }} />
-                <div style={{ fontSize: 12, color: theme.textSub, background: theme.surfaceAlt, padding: "8px 10px", borderRadius: 8, fontStyle: "italic" }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: theme.danger, marginBottom: 8 }}>
+                  Temuan {idx + 1}
+                </div>
+                <img
+                  src={f.url}
+                  alt="temuan"
+                  onClick={() => setPreviewUrl(f.url)}
+                  style={{ width: "100%", maxHeight: 200, objectFit: "cover", borderRadius: 8, marginBottom: 8, cursor: "pointer" }}
+                />
+                <div style={{ fontSize: 12, color: theme.textSub, background: theme.surfaceAlt, padding: "8px 10px", borderRadius: 8, fontStyle: "italic", marginBottom: 4 }}>
                   Temuan: "{f.keterangan}"
                 </div>
+
+                {/* Foto bukti perbaikan — wajib, dipasangkan dengan temuan ini */}
+                <RepairPhotoSlot
+                  label={`Foto bukti perbaikan untuk Temuan ${idx + 1} (wajib)`}
+                  kategori={`${inspeksi.nomor_polisi}_${idx}`}
+                  foto={buktiPerbaikan[idx]}
+                  onFoto={setFotoAt(idx)}
+                  onPreview={setPreviewUrl}
+                  errorFoto={!!errors[`bukti_${idx}`]}
+                />
               </div>
             ))}
           </div>
@@ -194,8 +293,6 @@ const TindakLanjutDetail = ({ inspeksi, fotoTemuan, onBack, onSelesai }) => {
               ⚠️ Keterangan tindak lanjut wajib diisi.
             </div>
           )}
-
-          <CameraCaptureMini kategori={inspeksi.nomor_polisi} onPhotos={setBuktiFoto} />
         </div>
       </div>
 
@@ -204,10 +301,12 @@ const TindakLanjutDetail = ({ inspeksi, fotoTemuan, onBack, onSelesai }) => {
         width: "100%", maxWidth: 430, padding: "12px 16px",
         background: theme.surface, borderTop: `1px solid ${theme.border}`,
       }}>
-        <Btn onClick={handleSubmit} variant="primary" icon="check" disabled={submitting}>
-          {submitting ? "Menyimpan..." : "Simpan Tindak Lanjut"}
+        <Btn onClick={handleSubmit} variant="primary" icon="check" disabled={submitting || !semuaLengkap}>
+          {submitting ? "Menyimpan..." : `Simpan Tindak Lanjut (${jumlahLengkap}/${fotoTemuan.length} foto)`}
         </Btn>
       </div>
+
+      <PhotoLightbox url={previewUrl} onClose={() => setPreviewUrl(null)} />
     </div>
   );
 };
@@ -231,7 +330,9 @@ const HSETindakLanjut = ({ onBack, onNav }) => {
       const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
       setRole(profile?.role);
 
-      // Kendaraan yang GAGAL uji kedap dan belum ditindaklanjuti
+      // Kendaraan yang GAGAL uji kedap dan belum ditindaklanjuti.
+      // Setelah tindak lanjut disimpan, status berubah jadi "selesai" sehingga
+      // otomatis hilang dari daftar ini (query difilter status === "tidak_lulus").
       const { data: inspeksiData, error } = await supabase
         .from("inspeksi_hse")
         .select("*")
@@ -250,12 +351,11 @@ const HSETindakLanjut = ({ onBack, onNav }) => {
   }, []);
 
   const handlePilih = async (insp) => {
-    // Ambil foto temuan (dari pengecekan awal, bukan bukti perbaikan)
     const { data: fotoData } = await supabase
       .from("foto_inspeksi_hse")
       .select("*")
       .eq("inspeksi_hse_id", insp.id)
-      .neq("keterangan", "Bukti perbaikan")
+      .not("keterangan", "like", "Bukti perbaikan%")
       .order("created_at", { ascending: true });
 
     setSelected(insp);

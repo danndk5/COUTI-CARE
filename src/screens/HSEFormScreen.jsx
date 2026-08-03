@@ -70,10 +70,14 @@ const formatServerTime = (date) => {
   const ss = String(date.getSeconds()).padStart(2,"0");
   return `${hari}, ${date.getDate()} ${bulan} ${date.getFullYear()} ${hh}:${mm}:${ss}`;
 };
+const formatTanggal = (val) => {
+  if (!val) return "-";
+  try {
+    return new Date(val).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
+  } catch { return val; }
+};
 
 // ── applyOverlay (shared) ─────────────────────────────────────────────────────
-// cachedPos: hasil getCurrentPosition yang sudah diambil sebelumnya (saat cek izin),
-// dipakai lagi di sini supaya GPS tidak di-fetch dua kali (yang bikin proses lama).
 const applyOverlay = async (file, cachedPos) => {
   let serverTime = new Date();
   try {
@@ -88,7 +92,6 @@ const applyOverlay = async (file, cachedPos) => {
   const dmsStr  = formatDMS(latitude, longitude);
   const timeStr = formatServerTime(serverTime);
 
-  // createImageBitmap membaca orientasi EXIF otomatis supaya foto tidak kebalik/miring
   let bitmap;
   try {
     bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
@@ -101,7 +104,6 @@ const applyOverlay = async (file, cachedPos) => {
     });
   }
 
-  // Batasi dimensi maksimal supaya ukuran file lebih kecil dan upload lebih cepat
   const MAX_DIM = 1600;
   let targetW = bitmap.width, targetH = bitmap.height;
   if (Math.max(targetW, targetH) > MAX_DIM) {
@@ -185,7 +187,7 @@ const CameraCaptureSingle = ({ label, onFoto, foto, errorFoto, onPreview }) => {
   const [capState, setCapState] = useState("idle");
   const [permErr,  setPermErr]  = useState(null);
   const fileInputRef = useRef(null);
-  const cachedPosRef  = useRef(null); // lokasi hasil cek izin, dipakai ulang saat upload (hindari fetch GPS 2x)
+  const cachedPosRef  = useRef(null);
 
   const handleCaptureClick = async () => {
     setPermErr(null);
@@ -284,7 +286,7 @@ const CameraCaptureMulti = ({ kategori, fotoList, onFotoList, onPreview }) => {
   const [capState, setCapState] = useState("idle");
   const [permErr,  setPermErr]  = useState(null);
   const fileInputRef = useRef(null);
-  const cachedPosRef  = useRef(null); // lokasi hasil cek izin, dipakai ulang saat upload (hindari fetch GPS 2x)
+  const cachedPosRef  = useRef(null);
 
   const handleCaptureClick = async () => {
     setPermErr(null);
@@ -344,7 +346,6 @@ const CameraCaptureMulti = ({ kategori, fotoList, onFotoList, onPreview }) => {
       <input ref={fileInputRef} type="file" accept="image/*" capture="environment"
         onChange={handleFileChange} style={{ display: "none" }} />
 
-      {/* Daftar foto yang sudah diambil */}
       {fotoList.map((foto, idx) => (
         <div key={foto.path} style={{ marginBottom: 10, padding: 12, borderRadius: 10, background: theme.surfaceAlt, border: `1px solid ${theme.border}` }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, gap: 8 }}>
@@ -392,6 +393,14 @@ const CameraCaptureMulti = ({ kategori, fotoList, onFotoList, onPreview }) => {
   );
 };
 
+// ── InfoRow — baris info kendaraan read-only dari database ────────────────────
+const InfoRow = ({ label, value }) => (
+  <div style={{ display: "flex", justifyContent: "space-between", padding: "9px 0", borderBottom: `1px solid ${theme.border}` }}>
+    <div style={{ fontSize: 12, color: theme.textMuted }}>{label}</div>
+    <div style={{ fontSize: 13, fontWeight: 700, color: theme.text, textAlign: "right" }}>{value || "-"}</div>
+  </div>
+);
+
 // ── HSEFormScreen ─────────────────────────────────────────────────────────────
 const HSEFormScreen = ({ onBack, onNav }) => {
   const [step,        setStep]        = useState("sop");
@@ -399,39 +408,33 @@ const HSEFormScreen = ({ onBack, onNav }) => {
   const [currentUser, setCurrentUser] = useState(null);
   const [submitting,  setSubmitting]  = useState(false);
 
-  // Auto-fill kendaraan
-  const [lookupStatus, setLookupStatus] = useState("idle");
-  const [isAutoFilled, setIsAutoFilled] = useState(false);
+  // Lookup nomor polisi — data WAJIB dari database admin Pertamina, tidak bisa input manual
+  const [lookupStatus, setLookupStatus] = useState("idle"); // idle | loading | found | notfound
   const lookupTimer = useRef(null);
 
-  // Data kendaraan
+  // Data kendaraan — hanya "polisi" yang diketik user, sisanya read-only dari database
   const [kendaraan, setKendaraan] = useState({
     polisi: "", kapasitas: "", kompartemen: "", transportir: "",
+    masaBerlakuHeadTruck: "", masaBerlakuTangki: "",
   });
-  const setK = (k) => (v) => setKendaraan((p) => ({ ...p, [k]: v }));
 
   // Kategori MT
   const [kategoriMT, setKategoriMT] = useState("");
 
   // State uji kedap — 7 checkpoint, masing-masing: { status, foto }
-  // Kalau tidak kedap: fotoTemuan (array { name, url, path, keterangan })
   const initCheckpoints = () =>
     CHECKPOINTS.map((cp) => ({ menit: cp.menit, status: "", foto: null }));
 
   const [checkpoints,  setCheckpoints]  = useState(initCheckpoints);
-  const [fotoTemuan,   setFotoTemuan]   = useState([]); // foto bebas saat tidak kedap
+  const [fotoTemuan,   setFotoTemuan]   = useState([]);
 
-  // Preview foto (lightbox) — untuk cek foto blur/buram sebelum dikirim
   const [previewUrl, setPreviewUrl] = useState(null);
 
-  // Draft/auto-save — supaya data tidak hilang kalau app ke-close tiba-tiba
   const [ready, setReady] = useState(false);
   const [showRestoreBanner, setShowRestoreBanner] = useState(false);
 
-  // Errors
   const [errors, setErrors] = useState({});
 
-  // Semua path foto untuk cleanup orphan
   const allFotoPaths = useRef([]);
   const submittedRef = useRef(false);
 
@@ -455,12 +458,10 @@ const HSEFormScreen = ({ onBack, onNav }) => {
     });
   }, []);
 
-  // Draft kadaluarsa setelah 6 jam — supaya tidak melanjutkan data lama untuk kendaraan yang sudah lewat jadwal
   const DRAFT_EXPIRE_MS = 6 * 60 * 60 * 1000;
   const draftCreatedAtRef = useRef(null);
   const [draftExpiredNotice, setDraftExpiredNotice] = useState(false);
 
-  // Pulihkan draft form dari localStorage (kalau ada dan belum kadaluarsa) saat pertama kali dibuka
   useEffect(() => {
     const draft = loadDraft();
     if (draft) {
@@ -471,10 +472,9 @@ const HSEFormScreen = ({ onBack, onNav }) => {
       } else {
         setStep(draft.step || "sop");
         setSopPage(draft.sopPage || 0);
-        setKendaraan(draft.kendaraan || { polisi: "", kapasitas: "", kompartemen: "", transportir: "" });
+        setKendaraan(draft.kendaraan || { polisi: "", kapasitas: "", kompartemen: "", transportir: "", masaBerlakuHeadTruck: "", masaBerlakuTangki: "" });
         setKategoriMT(draft.kategoriMT || "");
-        setIsAutoFilled(!!draft.isAutoFilled);
-        setLookupStatus(draft.isAutoFilled ? "found" : "idle");
+        setLookupStatus(draft.lookupStatus || "idle");
         setCheckpoints(draft.checkpoints && draft.checkpoints.length ? draft.checkpoints : initCheckpoints());
         setFotoTemuan(draft.fotoTemuan || []);
         draftCreatedAtRef.current = draft.createdAt || Date.now();
@@ -484,24 +484,22 @@ const HSEFormScreen = ({ onBack, onNav }) => {
     setReady(true);
   }, []);
 
-  // Simpan draft form setiap ada perubahan (debounce ringan lewat effect)
   useEffect(() => {
     if (!ready) return;
     const hasProgress =
       step !== "sop" || sopPage > 0 || kendaraan.polisi.trim() || kategoriMT || fotoTemuan.length > 0;
     if (!hasProgress) { clearDraft(); draftCreatedAtRef.current = null; return; }
     if (!draftCreatedAtRef.current) draftCreatedAtRef.current = Date.now();
-    saveDraft({ createdAt: draftCreatedAtRef.current, step, sopPage, kendaraan, kategoriMT, isAutoFilled, checkpoints, fotoTemuan });
-  }, [ready, step, sopPage, kendaraan, kategoriMT, isAutoFilled, checkpoints, fotoTemuan]);
+    saveDraft({ createdAt: draftCreatedAtRef.current, step, sopPage, kendaraan, kategoriMT, lookupStatus, checkpoints, fotoTemuan });
+  }, [ready, step, sopPage, kendaraan, kategoriMT, lookupStatus, checkpoints, fotoTemuan]);
 
   const resetSemua = () => {
     clearDraft();
     draftCreatedAtRef.current = null;
     setStep("sop");
     setSopPage(0);
-    setKendaraan({ polisi: "", kapasitas: "", kompartemen: "", transportir: "" });
+    setKendaraan({ polisi: "", kapasitas: "", kompartemen: "", transportir: "", masaBerlakuHeadTruck: "", masaBerlakuTangki: "" });
     setKategoriMT("");
-    setIsAutoFilled(false);
     setLookupStatus("idle");
     setCheckpoints(initCheckpoints());
     setFotoTemuan([]);
@@ -542,37 +540,43 @@ const HSEFormScreen = ({ onBack, onNav }) => {
     </div>
   );
 
-  // Debounce lookup nopol
+  // Lookup nomor polisi — SELALU dari database admin, tidak ada mode "isi manual".
+  // Nomor polisi otomatis diubah ke huruf besar (kapital) mengikuti format database.
   const handlePolisiChange = useCallback((val) => {
-    setKendaraan((p) => ({ ...p, polisi: val, kapasitas: "", kompartemen: "", transportir: "" }));
-    setIsAutoFilled(false);
+    const upper = val.toUpperCase();
+    setKendaraan((p) => ({
+      ...p, polisi: upper, kapasitas: "", kompartemen: "", transportir: "",
+      masaBerlakuHeadTruck: "", masaBerlakuTangki: "",
+    }));
     setLookupStatus("idle");
     if (lookupTimer.current) clearTimeout(lookupTimer.current);
-    if (!val.trim()) return;
+    if (!upper.trim()) return;
+
     lookupTimer.current = setTimeout(async () => {
       setLookupStatus("loading");
       try {
         const { data } = await supabase
-          .from("kendaraan").select("transportir, kapasitas_mt, jumlah_kompartemen, kategori_mt")
-          .eq("nomor_polisi", val.trim().toUpperCase()).maybeSingle();
+          .from("kendaraan")
+          .select("transportir, kapasitas_mt, jumlah_kompartemen, kategori_mt, masa_berlaku_head_truck, masa_berlaku_tangki")
+          .eq("nomor_polisi", upper.trim()).maybeSingle();
         if (data) {
           setKendaraan((p) => ({
             ...p,
-            transportir: data.transportir        || "",
-            kapasitas:   data.kapasitas_mt        || "",
-            kompartemen: data.jumlah_kompartemen?.toString() || "",
+            transportir:           data.transportir            || "",
+            kapasitas:             data.kapasitas_mt            || "",
+            kompartemen:           data.jumlah_kompartemen?.toString() || "",
+            masaBerlakuHeadTruck:  data.masa_berlaku_head_truck || "",
+            masaBerlakuTangki:     data.masa_berlaku_tangki     || "",
           }));
           if (data.kategori_mt) setKategoriMT(data.kategori_mt);
-          setIsAutoFilled(true);
           setLookupStatus("found");
         } else {
-          setLookupStatus("new");
+          setLookupStatus("notfound");
         }
-      } catch { setLookupStatus("new"); }
+      } catch { setLookupStatus("notfound"); }
     }, 600);
   }, []);
 
-  // Helper: index checkpoint tidak kedap (-1 kalau semua kedap)
   const idxTidakKedap = checkpoints.findIndex((cp) => cp.status === "tidak_kedap");
   const statusAkhir   = idxTidakKedap >= 0 ? "tidak_kedap"
     : checkpoints.every((cp) => cp.status === "kedap") ? "kedap" : "";
@@ -581,13 +585,11 @@ const HSEFormScreen = ({ onBack, onNav }) => {
     setCheckpoints((prev) => {
       const next = prev.map((cp, i) => {
         if (i === idx) return { ...cp, status };
-        // Kalau tidak kedap dipilih, reset checkpoint setelahnya
         if (status === "tidak_kedap" && i > idx) return { ...cp, status: "", foto: null };
         return cp;
       });
       return next;
     });
-    // Reset foto temuan kalau kembali pilih kedap
     if (status === "kedap") setFotoTemuan([]);
   };
 
@@ -603,13 +605,10 @@ const HSEFormScreen = ({ onBack, onNav }) => {
   const handleSkipSOP = () => setStep("kendaraan");
 
   const handleLanjutKendaraan = () => {
-    const e = {};
-    if (!kendaraan.polisi.trim())      e.polisi      = true;
-    if (!kendaraan.kapasitas.trim())   e.kapasitas   = true;
-    if (!kendaraan.kompartemen.trim()) e.kompartemen = true;
-    if (!kendaraan.transportir.trim()) e.transportir = true;
-    setErrors(e);
-    if (Object.keys(e).length > 0) { alert("Semua data kendaraan wajib diisi!"); return; }
+    if (lookupStatus !== "found") {
+      alert("Nomor Polisi tidak terdaftar di database Pertamina. Uji kedap tidak dapat dilanjutkan — hubungi admin untuk registrasi kendaraan terlebih dahulu.");
+      return;
+    }
     setStep("kategori");
   };
 
@@ -628,7 +627,6 @@ const HSEFormScreen = ({ onBack, onNav }) => {
         if (!cp.foto) e[`cp_${i}_foto`] = true;
       });
     } else {
-      // tidak kedap: semua foto temuan wajib ada keterangan
       fotoTemuan.forEach((f, i) => {
         if (!f.keterangan.trim()) e[`temuan_${i}_ket`] = true;
       });
@@ -655,7 +653,6 @@ const HSEFormScreen = ({ onBack, onNav }) => {
 
       submittedRef.current = true;
 
-      // Simpan checkpoint data
       const { error: cpErr } = await supabase.from("inspeksi_hse_checkpoint").insert(
         checkpoints
           .filter((cp) => cp.status !== "")
@@ -668,7 +665,6 @@ const HSEFormScreen = ({ onBack, onNav }) => {
       );
       if (cpErr) throw cpErr;
 
-      // Simpan foto temuan (kalau tidak kedap)
       if (fotoTemuan.length > 0) {
         const { error: temuanErr } = await supabase.from("foto_inspeksi_hse").insert(
           fotoTemuan.map((f) => ({
@@ -680,20 +676,9 @@ const HSEFormScreen = ({ onBack, onNav }) => {
         if (temuanErr) throw temuanErr;
       }
 
-      // Upsert kendaraan
-      await supabase.from("kendaraan").upsert(
-        {
-          nomor_polisi:       kendaraan.polisi.trim().toUpperCase(),
-          transportir:        kendaraan.transportir.trim(),
-          kapasitas_mt:       kendaraan.kapasitas.trim(),
-          jumlah_kompartemen: parseInt(kendaraan.kompartemen),
-          kategori_mt:        kategoriMT,
-          updated_at:         new Date().toISOString(),
-        },
-        { onConflict: "nomor_polisi" }
-      );
+      // Catatan: kendaraan TIDAK di-upsert lagi dari sisi HSE — data master
+      // sepenuhnya dikelola oleh admin Pertamina, HSE hanya membaca (read-only).
 
-      // Data sudah tersimpan di server, draft lokal tidak diperlukan lagi
       clearDraft();
 
       alert(statusAkhir === "kedap"
@@ -758,7 +743,7 @@ const HSEFormScreen = ({ onBack, onNav }) => {
     );
   }
 
-  // ── STEP KENDARAAN ────────────────────────────────────────────────────────
+  // ── STEP KENDARAAN — hanya cari nomor polisi, data lain read-only dari DB ──
   if (step === "kendaraan") {
     return (
       <div style={{ minHeight: "100vh", background: theme.bg, display: "flex", flexDirection: "column" }}>
@@ -767,7 +752,7 @@ const HSEFormScreen = ({ onBack, onNav }) => {
             <Icon name="arrow" size={16} color={theme.textSub} /> Kembali
           </div>
           <div style={{ fontWeight: 800, fontSize: 18, color: theme.text }}>Data Kendaraan</div>
-          <div style={{ fontSize: 13, color: theme.textMuted, marginTop: 2 }}>Isi sekali, otomatis tersimpan</div>
+          <div style={{ fontSize: 13, color: theme.textMuted, marginTop: 2 }}>Cari nomor polisi terdaftar di database Pertamina</div>
         </div>
 
         {restoreBanner}
@@ -776,37 +761,34 @@ const HSEFormScreen = ({ onBack, onNav }) => {
           <div style={{ background: theme.surface, borderRadius: 14, padding: 16, border: `1px solid ${theme.border}` }}>
             <Input label="Nomor Polisi" placeholder="Contoh: B 1234 XY"
               value={kendaraan.polisi} onChange={handlePolisiChange} />
-            {lookupStatus === "loading" && <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 10 }}>🔍 Mencari data kendaraan...</div>}
-            {lookupStatus === "found"   && <div style={{ fontSize: 12, color: theme.success, fontWeight: 600, marginBottom: 10 }}>✅ Data ditemukan — terisi otomatis</div>}
-            {lookupStatus === "new"     && <div style={{ fontSize: 12, color: "#F59E0B", fontWeight: 600, marginBottom: 10 }}>🆕 Kendaraan baru — isi manual</div>}
-            {errors.polisi && <div style={{ fontSize: 12, color: theme.danger, marginBottom: 8 }}>⚠️ Nomor Polisi wajib diisi.</div>}
-
-            <Input label="Kapasitas MT (contoh: 10 KL)" placeholder="10 KL"
-              value={kendaraan.kapasitas} onChange={isAutoFilled ? undefined : setK("kapasitas")} disabled={isAutoFilled} />
-            {errors.kapasitas && <div style={{ fontSize: 12, color: theme.danger, marginBottom: 8 }}>⚠️ Kapasitas MT wajib diisi.</div>}
-
-            <Input label="Jumlah Kompartemen" placeholder="1 / 2 / 3"
-              value={kendaraan.kompartemen} onChange={isAutoFilled ? undefined : setK("kompartemen")} disabled={isAutoFilled} />
-            {errors.kompartemen && <div style={{ fontSize: 12, color: theme.danger, marginBottom: 8 }}>⚠️ Jumlah kompartemen wajib diisi.</div>}
-
-            <Input label="Transportir" placeholder="PT. ..."
-              value={kendaraan.transportir} onChange={isAutoFilled ? undefined : setK("transportir")} disabled={isAutoFilled} />
-            {errors.transportir && <div style={{ fontSize: 12, color: theme.danger, marginBottom: 8 }}>⚠️ Transportir wajib diisi.</div>}
-
-            {isAutoFilled && (
-              <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 4 }}>
-                Data terisi otomatis.{" "}
-                <span onClick={() => { setIsAutoFilled(false); setLookupStatus("new"); }}
-                  style={{ color: theme.primary, cursor: "pointer", textDecoration: "underline" }}>
-                  Edit manual
-                </span>
+            {lookupStatus === "loading" && (
+              <div style={{ fontSize: 12, color: theme.textMuted }}>🔍 Mencari data kendaraan...</div>
+            )}
+            {lookupStatus === "found" && (
+              <div style={{ fontSize: 12, color: theme.success, fontWeight: 600 }}>✅ Data kendaraan ditemukan</div>
+            )}
+            {lookupStatus === "notfound" && (
+              <div style={{ fontSize: 12, color: theme.danger, fontWeight: 600 }}>
+                ⛔ Nomor Polisi tidak terdaftar di database Pertamina. Hubungi admin untuk registrasi kendaraan terlebih dahulu.
               </div>
             )}
+            {errors.polisi && <div style={{ fontSize: 12, color: theme.danger, marginTop: 6 }}>⚠️ Nomor Polisi wajib diisi.</div>}
           </div>
+
+          {lookupStatus === "found" && (
+            <div style={{ marginTop: 16, background: theme.surface, borderRadius: 14, padding: 16, border: `1px solid ${theme.border}` }}>
+              <SectionLabel>Data Kendaraan (dari database)</SectionLabel>
+              <InfoRow label="Kapasitas MT" value={kendaraan.kapasitas} />
+              <InfoRow label="Jumlah Kompartemen" value={kendaraan.kompartemen} />
+              <InfoRow label="Transportir" value={kendaraan.transportir} />
+              <InfoRow label="Masa Berlaku Head Truck" value={formatTanggal(kendaraan.masaBerlakuHeadTruck)} />
+              <InfoRow label="Masa Berlaku Tangki" value={formatTanggal(kendaraan.masaBerlakuTangki)} />
+            </div>
+          )}
         </div>
 
         <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 430, padding: "12px 16px", background: theme.surface, borderTop: `1px solid ${theme.border}` }}>
-          <Btn onClick={handleLanjutKendaraan} variant="primary">Lanjut →</Btn>
+          <Btn onClick={handleLanjutKendaraan} variant="primary" disabled={lookupStatus !== "found"}>Lanjut →</Btn>
         </div>
       </div>
     );
@@ -865,7 +847,6 @@ const HSEFormScreen = ({ onBack, onNav }) => {
         <div style={{ fontSize: 13, color: theme.textMuted, marginTop: 2 }}>
           {kendaraan.polisi} · {kendaraan.kapasitas} · {kendaraan.kompartemen} kompartemen
         </div>
-        {/* Status akhir badge */}
         {statusAkhir === "kedap" && (
           <div style={{ marginTop: 10, padding: "6px 14px", borderRadius: 20, background: "#D1FAE5", color: theme.success, fontWeight: 700, fontSize: 13, display: "inline-block" }}>
             ✅ LULUS — Semua checkpoint kedap
@@ -891,10 +872,7 @@ const HSEFormScreen = ({ onBack, onNav }) => {
           const cp      = checkpoints[idx];
           const prevCp  = checkpoints[idx - 1];
 
-          // Checkpoint 0 selalu tampil
-          // Checkpoint N tampil hanya kalau N-1 sudah kedap + ada foto
           const visible = idx === 0 || (prevCp?.status === "kedap" && prevCp?.foto);
-          // Sembunyikan kalau ada tidak kedap sebelumnya
           const blocked = checkpoints.slice(0, idx).some((c) => c.status === "tidak_kedap");
 
           if (!visible || blocked) return null;
@@ -907,7 +885,6 @@ const HSEFormScreen = ({ onBack, onNav }) => {
               marginBottom: 14, padding: 14, borderRadius: 12, background: theme.surface,
               border: `1.5px solid ${isKedap ? theme.success : isTidakKedap ? theme.danger : theme.border}`,
             }}>
-              {/* Label + tekanan */}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
                 <div style={{ fontWeight: 700, fontSize: 14, color: theme.text }}>▶ {cpDef.label}</div>
                 <div style={{ fontSize: 12, fontWeight: 700, color: theme.primary, background: theme.primaryLight, padding: "3px 10px", borderRadius: 20 }}>
@@ -915,7 +892,6 @@ const HSEFormScreen = ({ onBack, onNav }) => {
                 </div>
               </div>
 
-              {/* Toggle Kedap / Tidak Kedap */}
               <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
                 {["kedap", "tidak_kedap"].map((opt) => (
                   <div key={opt} onClick={() => setCheckpointStatus(idx, opt)} style={{
@@ -934,7 +910,6 @@ const HSEFormScreen = ({ onBack, onNav }) => {
                 ))}
               </div>
 
-              {/* Foto wajib kalau Kedap */}
               {isKedap && (
                 <CameraCaptureSingle
                   label={`Foto alat ukur ${cpDef.label}`}
@@ -945,7 +920,6 @@ const HSEFormScreen = ({ onBack, onNav }) => {
                 />
               )}
 
-              {/* Kalau tidak kedap: tampil info STOP */}
               {isTidakKedap && (
                 <div style={{ marginTop: 8, padding: "8px 12px", borderRadius: 8, background: theme.dangerLight, fontSize: 12, color: theme.danger, fontWeight: 600 }}>
                   🛑 Uji dihentikan — lanjut ke pencatatan temuan di bawah
@@ -955,7 +929,6 @@ const HSEFormScreen = ({ onBack, onNav }) => {
           );
         })}
 
-        {/* Section temuan — muncul kalau ada tidak kedap */}
         {idxTidakKedap >= 0 && (
           <div style={{ marginTop: 8, padding: 16, borderRadius: 14, background: theme.surface, border: `2px solid ${theme.danger}` }}>
             <div style={{ fontWeight: 700, fontSize: 15, color: theme.danger, marginBottom: 4 }}>❌ Inspeksi Temuan</div>
