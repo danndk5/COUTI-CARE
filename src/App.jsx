@@ -402,7 +402,7 @@ const AppInner = () => {
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2000 }}>
           <div style={{ background: theme.surface, borderRadius: 16, padding: 24, width: "90%", maxWidth: 320, textAlign: "center" }}>
             <div style={{ fontSize: 16, fontWeight: 800, color: theme.text, marginBottom: 8 }}>Keluar dari aplikasi?</div>
-            <div style={{ fontSize: 13, color: theme.textMuted, marginBottom: 20 }}>Kamu akan keluar dari GPS &amp; CCTV Checker.</div>
+            <div style={{ fontSize: 13, color: theme.textMuted, marginBottom: 20 }}>Kamu akan keluar dari VISION.</div>
             <div style={{ display: "flex", gap: 10 }}>
               <button onClick={cancelExit} style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: `1.5px solid ${theme.border}`, background: theme.surface, color: theme.text, fontSize: 13, fontWeight: 600, fontFamily: "'DM Sans', sans-serif", cursor: "pointer" }}>
                 Batal
