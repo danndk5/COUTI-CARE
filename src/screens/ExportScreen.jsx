@@ -6,6 +6,9 @@ import SectionLabel from "../components/SectionLabel";
 import theme from "../styles/theme";
 import { useBreakpoint } from "../hooks/useBreakpoint";
 import { SIDEBAR_WIDTH } from "../styles/layout";
+import { getDateRangeFromPeriode, fetchExportData, computeTopKerusakan, computeRingkasan } from "../lib/exportHelper";
+import { generateExcel } from "../lib/exportExcel";
+import { generatePdf } from "../lib/exportPdf";
 
 // ── Opsi kategori data ────────────────────────────────────────────────────────
 const KATEGORI_OPTIONS = [
@@ -85,6 +88,7 @@ const ExportScreen = ({ onNav, onBack }) => {
   const [sertakanFoto, setSertakanFoto] = useState(true);
   const [format, setFormat]     = useState("excel"); // "excel" | "pdf"
   const [generating, setGenerating] = useState(false);
+  const [progress, setProgress] = useState(null); // { done, total, label } — khusus PDF+foto
 
   const toggleKategori = (key) => {
     setKategori((prev) => prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]);
@@ -92,20 +96,46 @@ const ExportScreen = ({ onNav, onBack }) => {
 
   const isValid = kategori.length > 0 && (periode !== "custom" || (customFrom && customTo));
 
-  const handleGenerate = () => {
-    // TODO: logic generate file (Excel/PDF) menyusul di tahap berikutnya.
-    // Untuk sekarang tombol ini hanya menampilkan ringkasan pilihan sebagai placeholder.
+  const handleGenerate = async () => {
     setGenerating(true);
-    setTimeout(() => {
+    setProgress(null);
+    try {
+      const { fromISO, toISO } = getDateRangeFromPeriode(periode, customFrom, customTo);
+      const exportData = await fetchExportData({ kategori, fromISO, toISO });
+
+      const totalRows = kategori.reduce((sum, k) => sum + (exportData[k]?.length || 0), 0);
+      if (totalRows === 0) {
+        alert("Tidak ada data pada periode & kategori yang dipilih. Coba ubah filter.");
+        return;
+      }
+
+      const topKerusakan = computeTopKerusakan(exportData);
+      const ringkasan = computeRingkasan(exportData);
+      const periodeObj = PERIODE_OPTIONS.find((p) => p.key === periode);
+      const periodeLabel = periode === "custom"
+        ? `${periodeObj?.label} (${customFrom} s/d ${customTo})`
+        : periodeObj?.label;
+
+      if (format === "excel") {
+        generateExcel({ data: exportData, topKerusakan, ringkasan, periodeLabel, kategori });
+      } else {
+        await generatePdf({
+          data: exportData,
+          topKerusakan,
+          ringkasan,
+          periodeLabel,
+          kategori,
+          sertakanFoto,
+          onProgress: (done, total, label) => setProgress({ done, total, label }),
+        });
+      }
+    } catch (err) {
+      console.error("Export error:", err);
+      alert("Gagal membuat file: " + (err.message || "Terjadi kesalahan tak terduga."));
+    } finally {
       setGenerating(false);
-      alert(
-        "Fitur download belum aktif — ini baru tampilan filter.\n\n" +
-        `Kategori: ${kategori.join(", ")}\n` +
-        `Periode: ${periode}${periode === "custom" ? ` (${customFrom} s/d ${customTo})` : ""}\n` +
-        `Sertakan foto: ${sertakanFoto ? "Ya" : "Tidak"}\n` +
-        `Format: ${format.toUpperCase()}`
-      );
-    }, 600);
+      setProgress(null);
+    }
   };
 
   return (
@@ -291,8 +321,16 @@ const ExportScreen = ({ onNav, onBack }) => {
           }}
         >
           <Icon name="download" size={16} color="#fff" />
-          {generating ? "Menyiapkan..." : "Generate & Download"}
+          {generating
+            ? (progress ? `Memproses ${progress.label} ${progress.done}/${progress.total}...` : "Menyiapkan...")
+            : "Generate & Download"}
         </div>
+
+        {generating && progress && (
+          <div style={{ marginTop: 10, fontSize: 11.5, color: theme.textMuted, textAlign: "center" }}>
+            Sedang menyisipkan foto dokumentasi — mohon jangan tutup halaman ini.
+          </div>
+        )}
       </div>
 
       <BottomNav active="export" onNav={onNav} role="pertamina" userName="Pertamina" />
