@@ -453,6 +453,9 @@ const HSETindakLanjut = ({ onBack, onNav }) => {
   const [loading,    setLoading]    = useState(true);
   const [role,       setRole]       = useState(null);
 
+  // Nomor polisi yang pernah gagal uji kedap lebih dari 1 kali — ditandai "Berulang"
+  const [repeatSet, setRepeatSet] = useState(new Set());
+
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
@@ -476,6 +479,25 @@ const HSETindakLanjut = ({ onBack, onNav }) => {
       if (error) console.error("Error load inspeksi_hse:", error);
 
       setList(inspeksiData || []);
+
+      // Cek kendaraan yang berulang kali gagal uji kedap (riwayat > 1 kali gagal)
+      const plates = [...new Set((inspeksiData || []).map((i) => i.nomor_polisi))];
+      if (plates.length > 0) {
+        const { data: histData } = await supabase
+          .from("inspeksi_hse")
+          .select("nomor_polisi, status")
+          .eq("user_id", user.id)
+          .in("nomor_polisi", plates)
+          .in("status", ["tidak_lulus", "selesai"]);
+
+        const counts = {};
+        (histData || []).forEach((h) => {
+          counts[h.nomor_polisi] = (counts[h.nomor_polisi] || 0) + 1;
+        });
+        const repeats = new Set(Object.keys(counts).filter((k) => counts[k] > 1));
+        setRepeatSet(repeats);
+      }
+
       setLoading(false);
     };
 
@@ -559,7 +581,17 @@ const HSETindakLanjut = ({ onBack, onNav }) => {
                       <Icon name="wrench" size={20} color={theme.danger} />
                     </div>
                     <div>
-                      <div style={{ fontWeight: 700, fontSize: 15, color: theme.text }}>{insp.nomor_polisi}</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <div style={{ fontWeight: 700, fontSize: 15, color: theme.text }}>{insp.nomor_polisi}</div>
+                        {repeatSet.has(insp.nomor_polisi) && (
+                          <div style={{
+                            fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 20,
+                            background: "#FEF3C7", color: "#D97706",
+                          }}>
+                            ⚠️ Berulang
+                          </div>
+                        )}
+                      </div>
                       <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>{insp.transportir}</div>
                       <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 1 }}>
                         {insp.kapasitas_mt} · {insp.kategori_mt === "merah_putih" ? "Merah Putih" : "Industri"}

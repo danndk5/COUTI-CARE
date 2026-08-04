@@ -412,6 +412,9 @@ const HSEFormScreen = ({ onBack, onNav }) => {
   const [lookupStatus, setLookupStatus] = useState("idle"); // idle | loading | found | notfound
   const lookupTimer = useRef(null);
 
+  // Riwayat uji kedap sebelumnya untuk kendaraan yang sedang dicari (3 terakhir)
+  const [riwayatSebelumnya, setRiwayatSebelumnya] = useState([]);
+
   // Data kendaraan — hanya "polisi" yang diketik user, sisanya read-only dari database
   const [kendaraan, setKendaraan] = useState({
     polisi: "", kapasitas: "", kompartemen: "", transportir: "",
@@ -503,6 +506,7 @@ const HSEFormScreen = ({ onBack, onNav }) => {
     setLookupStatus("idle");
     setCheckpoints(initCheckpoints());
     setFotoTemuan([]);
+    setRiwayatSebelumnya([]);
     setShowRestoreBanner(false);
   };
 
@@ -549,6 +553,7 @@ const HSEFormScreen = ({ onBack, onNav }) => {
       masaBerlakuHeadTruck: "", masaBerlakuTangki: "",
     }));
     setLookupStatus("idle");
+    setRiwayatSebelumnya([]);
     if (lookupTimer.current) clearTimeout(lookupTimer.current);
     if (!upper.trim()) return;
 
@@ -570,6 +575,15 @@ const HSEFormScreen = ({ onBack, onNav }) => {
           }));
           if (data.kategori_mt) setKategoriMT(data.kategori_mt);
           setLookupStatus("found");
+
+          // Riwayat uji kedap sebelumnya — 3 pemeriksaan terakhir untuk kendaraan ini
+          const { data: riwayatData } = await supabase
+            .from("inspeksi_hse")
+            .select("status, created_at")
+            .eq("nomor_polisi", upper.trim())
+            .order("created_at", { ascending: false })
+            .limit(3);
+          setRiwayatSebelumnya(riwayatData || []);
         } else {
           setLookupStatus("notfound");
         }
@@ -619,7 +633,8 @@ const HSEFormScreen = ({ onBack, onNav }) => {
     setStep("ujikedap");
   };
 
-  const handleSubmit = async () => {
+  // Validasi uji kedap — dipakai baik saat mau menuju ringkasan maupun submit akhir
+  const validateUjiKedap = () => {
     const e = {};
     if (!statusAkhir) { e.uji_incomplete = true; }
     else if (statusAkhir === "kedap") {
@@ -632,8 +647,22 @@ const HSEFormScreen = ({ onBack, onNav }) => {
       });
       if (fotoTemuan.length === 0) e.temuan_foto = true;
     }
+    return e;
+  };
+
+  // Tombol di step uji kedap sekarang menuju layar RINGKASAN dulu, belum langsung kirim
+  const handleTinjau = () => {
+    const e = validateUjiKedap();
     setErrors(e);
     if (Object.keys(e).length > 0) { alert("Lengkapi semua data uji kedap!"); return; }
+    setStep("ringkasan");
+  };
+
+  // Submit sesungguhnya — dipanggil dari layar Ringkasan setelah HSE mengecek ulang datanya
+  const handleSubmit = async () => {
+    const e = validateUjiKedap();
+    setErrors(e);
+    if (Object.keys(e).length > 0) { alert("Lengkapi semua data uji kedap!"); setStep("ujikedap"); return; }
 
     setSubmitting(true);
     try {
@@ -785,6 +814,33 @@ const HSEFormScreen = ({ onBack, onNav }) => {
               <InfoRow label="Masa Berlaku Tangki" value={formatTanggal(kendaraan.masaBerlakuTangki)} />
             </div>
           )}
+
+          {/* Riwayat uji kedap sebelumnya — konteks untuk HSE sebelum uji ulang */}
+          {lookupStatus === "found" && riwayatSebelumnya.length > 0 && (
+            <div style={{ marginTop: 16, background: theme.surface, borderRadius: 14, padding: 16, border: `1px solid ${theme.border}` }}>
+              <SectionLabel>Riwayat Uji Kedap Sebelumnya</SectionLabel>
+              {riwayatSebelumnya.map((r, i) => {
+                const lulus = r.status === "lulus" || r.status === "selesai";
+                return (
+                  <div key={i} style={{
+                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                    padding: "8px 0", borderBottom: i < riwayatSebelumnya.length - 1 ? `1px solid ${theme.border}` : "none",
+                  }}>
+                    <div style={{ fontSize: 12, color: theme.textMuted }}>
+                      {new Date(r.created_at).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}
+                    </div>
+                    <div style={{
+                      fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20,
+                      background: lulus ? theme.successLight : theme.dangerLight,
+                      color: lulus ? theme.success : theme.danger,
+                    }}>
+                      {lulus ? "✅ Lulus" : "❌ Tidak Lulus"}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 430, padding: "12px 16px", background: theme.surface, borderTop: `1px solid ${theme.border}` }}>
@@ -832,6 +888,95 @@ const HSEFormScreen = ({ onBack, onNav }) => {
         <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 430, padding: "12px 16px", background: theme.surface, borderTop: `1px solid ${theme.border}` }}>
           <Btn onClick={handleLanjutKategori} variant="primary" disabled={!kategoriMT}>Lanjut →</Btn>
         </div>
+      </div>
+    );
+  }
+
+  // ── STEP RINGKASAN — tinjau ulang semua data sebelum benar-benar dikirim ───
+  if (step === "ringkasan") {
+    return (
+      <div style={{ minHeight: "100vh", background: theme.bg, display: "flex", flexDirection: "column" }}>
+        <div style={{ background: theme.surface, padding: "48px 16px 16px", borderBottom: `1px solid ${theme.border}`, boxShadow: theme.shadow }}>
+          <div onClick={() => setStep("ujikedap")} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, cursor: "pointer", color: theme.textSub, fontSize: 13 }}>
+            <Icon name="arrow" size={16} color={theme.textSub} /> Kembali & Edit
+          </div>
+          <div style={{ fontWeight: 800, fontSize: 18, color: theme.text }}>Ringkasan Sebelum Kirim</div>
+          <div style={{ fontSize: 13, color: theme.textMuted, marginTop: 2 }}>Periksa kembali semua data sebelum diunggah</div>
+        </div>
+
+        <div style={{ flex: 1, overflowY: "auto", padding: "20px 16px", paddingBottom: 100 }}>
+          {/* Status akhir */}
+          <div style={{
+            marginBottom: 16, padding: "14px 16px", borderRadius: 14, textAlign: "center",
+            background: statusAkhir === "kedap" ? "#D1FAE5" : theme.dangerLight,
+            color: statusAkhir === "kedap" ? theme.success : theme.danger,
+            fontWeight: 800, fontSize: 15,
+          }}>
+            {statusAkhir === "kedap" ? "✅ LULUS UJI KEDAP" : "❌ TIDAK LULUS UJI KEDAP"}
+          </div>
+
+          {/* Data kendaraan */}
+          <div style={{ marginBottom: 16, background: theme.surface, borderRadius: 14, padding: 16, border: `1px solid ${theme.border}` }}>
+            <SectionLabel>Data Kendaraan</SectionLabel>
+            <InfoRow label="Nomor Polisi" value={kendaraan.polisi} />
+            <InfoRow label="Kapasitas MT" value={kendaraan.kapasitas} />
+            <InfoRow label="Jumlah Kompartemen" value={kendaraan.kompartemen} />
+            <InfoRow label="Transportir" value={kendaraan.transportir} />
+            <InfoRow label="Kategori MT" value={kategoriMT === "merah_putih" ? "MT Merah Putih" : "MT Industri"} />
+          </div>
+
+          {/* Ringkasan checkpoint */}
+          <div style={{ marginBottom: 16, background: theme.surface, borderRadius: 14, padding: 16, border: `1px solid ${theme.border}` }}>
+            <SectionLabel>Checkpoint Uji Kedap (6 kPa)</SectionLabel>
+            {checkpoints.filter((cp) => cp.status).map((cp, idx) => (
+              <div key={idx} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderBottom: `1px solid ${theme.border}` }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  {cp.foto && (
+                    <img src={cp.foto.url} alt="checkpoint" onClick={() => setPreviewUrl(cp.foto.url)}
+                      style={{ width: 32, height: 32, borderRadius: 6, objectFit: "cover", cursor: "pointer" }} />
+                  )}
+                  <div style={{ fontSize: 12, color: theme.text }}>{CHECKPOINTS.find((c) => c.menit === cp.menit)?.label}</div>
+                </div>
+                <div style={{
+                  fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20,
+                  background: cp.status === "kedap" ? theme.successLight : theme.dangerLight,
+                  color: cp.status === "kedap" ? theme.success : theme.danger,
+                }}>
+                  {cp.status === "kedap" ? "Kedap" : "Tidak Kedap"}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Foto temuan (kalau tidak kedap) */}
+          {statusAkhir === "tidak_kedap" && (
+            <div style={{ marginBottom: 16, background: theme.surface, borderRadius: 14, padding: 16, border: `1px solid ${theme.border}` }}>
+              <SectionLabel>Foto Temuan ({fotoTemuan.length})</SectionLabel>
+              {fotoTemuan.map((f, idx) => (
+                <div key={idx} style={{ display: "flex", gap: 10, padding: "8px 0", borderBottom: `1px solid ${theme.border}` }}>
+                  <img src={f.url} alt="temuan" onClick={() => setPreviewUrl(f.url)}
+                    style={{ width: 44, height: 44, borderRadius: 8, objectFit: "cover", cursor: "pointer", flexShrink: 0 }} />
+                  <div style={{ fontSize: 12, color: theme.textMuted, alignSelf: "center" }}>{f.keterangan}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div style={{ fontSize: 12, color: theme.textMuted, textAlign: "center", marginTop: 4 }}>
+            Pastikan semua data sudah benar. Data tidak dapat diedit setelah dikirim.
+          </div>
+        </div>
+
+        <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 430, padding: "12px 16px", background: theme.surface, borderTop: `1px solid ${theme.border}`, display: "flex", gap: 10 }}>
+          <Btn onClick={() => setStep("ujikedap")} variant="ghost" style={{ flex: 1 }} disabled={submitting}>
+            ← Edit
+          </Btn>
+          <Btn onClick={handleSubmit} variant="primary" icon="check" style={{ flex: 2 }} disabled={submitting}>
+            {submitting ? "Mengirim..." : "✅ Kirim Sekarang"}
+          </Btn>
+        </div>
+
+        <PhotoLightbox url={previewUrl} onClose={() => setPreviewUrl(null)} />
       </div>
     );
   }
@@ -949,8 +1094,8 @@ const HSEFormScreen = ({ onBack, onNav }) => {
       </div>
 
       <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 430, padding: "12px 16px", background: theme.surface, borderTop: `1px solid ${theme.border}` }}>
-        <Btn onClick={handleSubmit} variant="primary" icon="check" disabled={submitting || !statusAkhir}>
-          {submitting ? "Menyimpan..." : "Simpan & Unggah"}
+        <Btn onClick={handleTinjau} variant="primary" icon="check" disabled={!statusAkhir}>
+          Tinjau & Kirim →
         </Btn>
       </div>
 
