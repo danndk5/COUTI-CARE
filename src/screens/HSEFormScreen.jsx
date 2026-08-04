@@ -711,8 +711,8 @@ const HSEFormScreen = ({ onBack, onNav }) => {
       clearDraft();
 
       alert(statusAkhir === "kedap"
-        ? "✅ Kendaraan LULUS Uji Kedap! Data berhasil di Unggah."
-        : "❌ Kendaraan TIDAK LULUS Uji Kedap. Data temuan berhasil dI Unggah.");
+        ? "Kendaraan LULUS Uji Kedap! Data berhasil di Unggah."
+        : "Kendaraan TIDAK LULUS Uji Kedap. Data temuan berhasil di Unggah.");
       onNav("dashboard");
     } catch (err) {
       alert("Gagal menyimpan: " + err.message);
