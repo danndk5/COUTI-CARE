@@ -8,6 +8,8 @@ import theme from "../styles/theme";
 import { supabase } from "../lib/supabase";
 import { useBreakpoint } from "../hooks/useBreakpoint";
 import { SIDEBAR_WIDTH } from "../styles/layout";
+import { useCameraGPS } from "../hooks/useCameraGPS";
+import { useBackableView, goBack } from "../hooks/useBackableView";
 
 // ── Draft persistence per inspeksi — agar data tidak hilang kalau app ke-close ──
 const draftKey = (inspeksiId) => `hse_tl_draft_${inspeksiId}`;
@@ -45,17 +47,14 @@ const formatServerTime = (date) => {
   return `${hari}, ${date.getDate()} ${bulan} ${date.getFullYear()} ${hh}:${mm}:${ss}`;
 };
 
-// ── applyOverlay (sama seperti HSEFormScreen — cepat, pakai cachedPos) ────────
-const applyOverlay = async (file, cachedPos) => {
+// ── applyOverlay (sama seperti HSEFormScreen — pos langsung dari cache warm-up) ──
+const applyOverlay = async (file, pos) => {
   let serverTime = new Date();
   try {
     const { data } = await supabase.rpc("get_server_time");
     if (data) serverTime = new Date(data);
   } catch {}
 
-  const pos = cachedPos || await new Promise((res, rej) =>
-    navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: true, timeout: 15000 })
-  );
   const { latitude, longitude } = pos.coords;
   const dmsStr  = formatDMS(latitude, longitude);
   const timeStr = formatServerTime(serverTime);
@@ -106,8 +105,8 @@ const applyOverlay = async (file, cachedPos) => {
 };
 
 // ── uploadFoto (dengan overlay timestamp + GPS) ────────────────────────────────
-const uploadFoto = async (file, kategori, cachedPos) => {
-  const blob = await applyOverlay(file, cachedPos);
+const uploadFoto = async (file, kategori, pos) => {
+  const blob = await applyOverlay(file, pos);
   const fileName = `hse-tl-${kategori}-${Date.now()}.jpg`;
   const { data, error } = await supabase.storage
     .from("foto-inspeksi").upload(fileName, blob, { contentType: "image/jpeg" });
@@ -117,18 +116,22 @@ const uploadFoto = async (file, kategori, cachedPos) => {
 };
 
 // ── PhotoLightbox — preview foto full-screen sebelum dikirim ──────────────────
+// Tombol back HP menutup lightbox ini dulu (bukan langsung keluar ke halaman
+// sebelumnya) — lihat useBackableView di hooks/useBackableView.js.
 const PhotoLightbox = ({ url, onClose }) => {
+  useBackableView(!!url, onClose);
+
   if (!url) return null;
   return (
     <div
-      onClick={onClose}
+      onClick={() => goBack(onClose)}
       style={{
         position: "fixed", inset: 0, background: "rgba(0,0,0,0.92)", zIndex: 9999,
         display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
       }}
     >
       <div
-        onClick={onClose}
+        onClick={() => goBack(onClose)}
         style={{
           position: "absolute", top: 44, right: 20, color: "#fff", fontSize: 26,
           fontWeight: 700, cursor: "pointer", width: 36, height: 36, borderRadius: 18,
@@ -151,9 +154,10 @@ const PhotoLightbox = ({ url, onClose }) => {
 };
 
 // ── RepairPhotoSlot — 1 foto bukti perbaikan + keterangan sendiri,
-//    dipasangkan dengan 1 foto temuan. Timestamp+GPS otomatis di-overlay,
-//    izin kamera & lokasi dicek paralel (cepat, sama seperti HSEFormScreen) ──
-const RepairPhotoSlot = ({ label, kategori, foto, onFoto, keterangan, onKeterangan, onPreview, errorFoto, errorKet }) => {
+//    dipasangkan dengan 1 foto temuan. requestAccess() sudah di-warm-up dari
+//    TindakLanjutDetail sejak layar ini dibuka, jadi tiap foto (temuan 1, 2, 3...)
+//    terasa instan — sama seperti foto Kedap di HSEFormScreen. ─────────────────
+const RepairPhotoSlot = ({ label, kategori, foto, onFoto, keterangan, onKeterangan, onPreview, errorFoto, errorKet, requestAccess }) => {
   const [capState, setCapState] = useState("idle");
   const [permErr,  setPermErr]  = useState(null);
   const fileInputRef = useRef(null);
@@ -163,14 +167,7 @@ const RepairPhotoSlot = ({ label, kategori, foto, onFoto, keterangan, onKeterang
     setPermErr(null);
     setCapState("checking");
     try {
-      const [, pos] = await Promise.all([
-        navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
-          .then((stream) => stream.getTracks().forEach((t) => t.stop())),
-        new Promise((res, rej) =>
-          navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: true, timeout: 15000 })
-        ),
-      ]);
-      cachedPosRef.current = pos;
+      cachedPosRef.current = await requestAccess();
       setCapState("idle");
       fileInputRef.current?.click();
     } catch {
@@ -279,6 +276,14 @@ const TindakLanjutDetail = ({ inspeksi, fotoTemuan, onBack, onSelesai }) => {
   const [submitting,     setSubmitting]     = useState(false);
   const [ready,          setReady]          = useState(false);
 
+  // GPS/kamera di-"hangat"-kan sejak layar tindak lanjut ini dibuka — supaya
+  // foto bukti perbaikan ke-1, ke-2, dst terasa instan (posisi sudah di tangan).
+  const { warmUp, coolDown, requestAccess } = useCameraGPS();
+  useEffect(() => {
+    warmUp();
+    return () => coolDown();
+  }, [warmUp, coolDown]);
+
   // Pulihkan draft (foto + keterangan per foto) kalau app sempat ke-close
   useEffect(() => {
     const draft = loadDraft(inspeksi.id);
@@ -368,7 +373,7 @@ const TindakLanjutDetail = ({ inspeksi, fotoTemuan, onBack, onSelesai }) => {
     <div style={{ minHeight: "100vh", background: theme.bg, display: "flex", flexDirection: "column" }}>
       {/* Header */}
       <div style={{ background: theme.surface, padding: "48px 16px 16px", borderBottom: `1px solid ${theme.border}`, boxShadow: theme.shadow }}>
-        <div onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, cursor: "pointer", color: theme.textSub, fontSize: 13 }}>
+        <div onClick={() => goBack(onBack)} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, cursor: "pointer", color: theme.textSub, fontSize: 13 }}>
           <Icon name="arrow" size={16} color={theme.textSub} /> Kembali
         </div>
         <div style={{ fontWeight: 800, fontSize: 18, color: theme.text }}>Tindak Lanjut Uji Kedap</div>
@@ -421,6 +426,7 @@ const TindakLanjutDetail = ({ inspeksi, fotoTemuan, onBack, onSelesai }) => {
                   onPreview={setPreviewUrl}
                   errorFoto={!!errors[`bukti_${idx}`]}
                   errorKet={!!errors[`ket_${idx}`]}
+                  requestAccess={requestAccess}
                 />
               </div>
             ))}
@@ -455,6 +461,11 @@ const HSETindakLanjut = ({ onBack, onNav }) => {
 
   // Nomor polisi yang pernah gagal uji kedap lebih dari 1 kali — ditandai "Berulang"
   const [repeatSet, setRepeatSet] = useState(new Set());
+
+  // Tombol back HP di layar "detail" mundur ke "list" dulu (bukan langsung
+  // keluar ke Beranda). Tombol "Kembali" versi UI di TindakLanjutDetail sudah
+  // dibuat memanggil goBack(onBack) supaya lewat jalur history yang sama.
+  useBackableView(view === "detail", () => setView("list"));
 
   useEffect(() => {
     const loadData = async () => {

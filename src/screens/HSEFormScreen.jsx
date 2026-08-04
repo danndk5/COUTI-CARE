@@ -5,6 +5,8 @@ import Input from "../components/Input";
 import SectionLabel from "../components/SectionLabel";
 import theme from "../styles/theme";
 import { supabase } from "../lib/supabase";
+import { useCameraGPS } from "../hooks/useCameraGPS";
+import { useBackableView, goBack } from "../hooks/useBackableView";
 import sop1 from "../assets/acuan/01.png";
 import sop2 from "../assets/acuan/02.png";
 import sop3 from "../assets/acuan/03.png";
@@ -78,16 +80,13 @@ const formatTanggal = (val) => {
 };
 
 // ── applyOverlay (shared) ─────────────────────────────────────────────────────
-const applyOverlay = async (file, cachedPos) => {
+const applyOverlay = async (file, pos) => {
   let serverTime = new Date();
   try {
     const { data } = await supabase.rpc("get_server_time");
     if (data) serverTime = new Date(data);
   } catch {}
 
-  const pos = cachedPos || await new Promise((res, rej) =>
-    navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: true, timeout: 15000 })
-  );
   const { latitude, longitude } = pos.coords;
   const dmsStr  = formatDMS(latitude, longitude);
   const timeStr = formatServerTime(serverTime);
@@ -138,8 +137,8 @@ const applyOverlay = async (file, cachedPos) => {
 };
 
 // ── uploadFoto (shared) ───────────────────────────────────────────────────────
-const uploadFoto = async (file, kategori, cachedPos) => {
-  const blob = await applyOverlay(file, cachedPos);
+const uploadFoto = async (file, kategori, pos) => {
+  const blob = await applyOverlay(file, pos);
   const fileName = `hse-${kategori}-${Date.now()}.jpg`;
   const { data, error } = await supabase.storage
     .from("foto-inspeksi").upload(fileName, blob, { contentType: "image/jpeg" });
@@ -149,18 +148,22 @@ const uploadFoto = async (file, kategori, cachedPos) => {
 };
 
 // ── PhotoLightbox — preview foto full-screen sebelum dikirim ──────────────────
+// Tombol back HP menutup lightbox ini (bukan langsung keluar ke Beranda) —
+// lihat useBackableView di hooks/useBackableView.js.
 const PhotoLightbox = ({ url, onClose }) => {
+  useBackableView(!!url, onClose);
+
   if (!url) return null;
   return (
     <div
-      onClick={onClose}
+      onClick={() => goBack(onClose)}
       style={{
         position: "fixed", inset: 0, background: "rgba(0,0,0,0.92)", zIndex: 9999,
         display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
       }}
     >
       <div
-        onClick={onClose}
+        onClick={() => goBack(onClose)}
         style={{
           position: "absolute", top: 44, right: 20, color: "#fff", fontSize: 26,
           fontWeight: 700, cursor: "pointer", width: 36, height: 36, borderRadius: 18,
@@ -183,7 +186,9 @@ const PhotoLightbox = ({ url, onClose }) => {
 };
 
 // ── CameraCapture — 1 foto, wajib ────────────────────────────────────────────
-const CameraCaptureSingle = ({ label, onFoto, foto, errorFoto, onPreview }) => {
+// requestAccess() dari useCameraGPS (di-warm-up sejak layar ini mount) —
+// kalau kamera & GPS sudah "hangat", ini langsung buka file input tanpa nunggu.
+const CameraCaptureSingle = ({ label, onFoto, foto, errorFoto, onPreview, requestAccess }) => {
   const [capState, setCapState] = useState("idle");
   const [permErr,  setPermErr]  = useState(null);
   const fileInputRef = useRef(null);
@@ -193,14 +198,7 @@ const CameraCaptureSingle = ({ label, onFoto, foto, errorFoto, onPreview }) => {
     setPermErr(null);
     setCapState("checking");
     try {
-      const [, pos] = await Promise.all([
-        navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
-          .then((stream) => stream.getTracks().forEach((t) => t.stop())),
-        new Promise((res, rej) =>
-          navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: true, timeout: 15000 })
-        ),
-      ]);
-      cachedPosRef.current = pos;
+      cachedPosRef.current = await requestAccess();
       setCapState("idle");
       fileInputRef.current?.click();
     } catch {
@@ -282,7 +280,7 @@ const CameraCaptureSingle = ({ label, onFoto, foto, errorFoto, onPreview }) => {
 };
 
 // ── CameraCapture — multi foto dengan keterangan per foto ─────────────────────
-const CameraCaptureMulti = ({ kategori, fotoList, onFotoList, onPreview }) => {
+const CameraCaptureMulti = ({ kategori, fotoList, onFotoList, onPreview, requestAccess }) => {
   const [capState, setCapState] = useState("idle");
   const [permErr,  setPermErr]  = useState(null);
   const fileInputRef = useRef(null);
@@ -292,14 +290,7 @@ const CameraCaptureMulti = ({ kategori, fotoList, onFotoList, onPreview }) => {
     setPermErr(null);
     setCapState("checking");
     try {
-      const [, pos] = await Promise.all([
-        navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
-          .then((stream) => stream.getTracks().forEach((t) => t.stop())),
-        new Promise((res, rej) =>
-          navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: true, timeout: 15000 })
-        ),
-      ]);
-      cachedPosRef.current = pos;
+      cachedPosRef.current = await requestAccess();
       setCapState("idle");
       fileInputRef.current?.click();
     } catch {
@@ -407,6 +398,15 @@ const HSEFormScreen = ({ onBack, onNav }) => {
   const [sopPage,     setSopPage]     = useState(0);
   const [currentUser, setCurrentUser] = useState(null);
   const [submitting,  setSubmitting]  = useState(false);
+
+  // GPS/kamera di-"hangat"-kan sejak layar formulir ini dibuka — supaya saat
+  // user sampai di step foto (kedap MAUPUN temuan), izin & posisi GPS sudah
+  // siap dan foto langsung terasa instan, bukan menunggu fix GPS baru tiap kali.
+  const { warmUp, coolDown, requestAccess } = useCameraGPS();
+  useEffect(() => {
+    warmUp();
+    return () => coolDown();
+  }, [warmUp, coolDown]);
 
   // Lookup nomor polisi — data WAJIB dari database admin Pertamina, tidak bisa input manual
   const [lookupStatus, setLookupStatus] = useState("idle"); // idle | loading | found | notfound
@@ -1062,6 +1062,7 @@ const HSEFormScreen = ({ onBack, onNav }) => {
                   foto={cp.foto}
                   errorFoto={!!errors[`cp_${idx}_foto`]}
                   onPreview={setPreviewUrl}
+                  requestAccess={requestAccess}
                 />
               )}
 
@@ -1088,6 +1089,7 @@ const HSEFormScreen = ({ onBack, onNav }) => {
               fotoList={fotoTemuan}
               onFotoList={setFotoTemuan}
               onPreview={setPreviewUrl}
+              requestAccess={requestAccess}
             />
           </div>
         )}
