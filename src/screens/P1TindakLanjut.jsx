@@ -2,103 +2,250 @@ import { useState, useEffect, useRef } from "react";
 import Btn from "../components/Btn";
 import Card from "../components/Card";
 import Icon from "../components/Icon";
-import Input from "../components/Input";
 import SectionLabel from "../components/SectionLabel";
 import theme from "../styles/theme";
 import { supabase } from "../lib/supabase";
+import { useCameraGPS } from "../hooks/useCameraGPS";
+import { useBackableView, goBack } from "../hooks/useBackableView";
 
-// ── CameraCapture (sama seperti P1FormScreen) ─────────────────────────────────
-const decimalToDMS = (d, p, n) => {
-  const dir = d >= 0 ? p : n, abs = Math.abs(d);
-  const deg = Math.floor(abs), mf = (abs - deg) * 60, min = Math.floor(mf);
-  return `${deg}\u00b0${min}'${Math.round((mf - min) * 60)}"${dir}`;
+// ── Draft persistence ─────────────────────────────────────────────────────────
+// Beda dari HSEFormScreen (form linear satu draft), di sini yang disimpan
+// adalah progres tindak lanjut untuk SATU kendaraan yang sedang dibuka
+// (selected + isian tl). Kalau app ke-close di tengah isi tindak lanjut,
+// begitu dibuka lagi akan ditawarkan untuk melanjutkan kendaraan yang sama.
+const DRAFT_KEY = "p1_tindaklanjut_draft_v1";
+const DRAFT_EXPIRE_MS = 6 * 60 * 60 * 1000;
+
+const saveDraft = (data) => {
+  try { localStorage.setItem(DRAFT_KEY, JSON.stringify(data)); } catch {}
 };
-const formatDMS = (lat, lng) => `${decimalToDMS(lat,"N","S")} ${decimalToDMS(lng,"E","W")}`;
+const loadDraft = () => {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+};
+const clearDraft = () => {
+  try { localStorage.removeItem(DRAFT_KEY); } catch {}
+};
+
+// ── Overlay & upload helper (pola sama dengan HSEFormScreen / P1FormScreen) ──
+const decimalToDMS = (decimal, posDir, negDir) => {
+  const dir = decimal >= 0 ? posDir : negDir;
+  const abs = Math.abs(decimal);
+  const deg = Math.floor(abs);
+  const minFull = (abs - deg) * 60;
+  const min = Math.floor(minFull);
+  const sec = Math.round((minFull - min) * 60);
+  return `${deg}\u00b0${min}'${sec}"${dir}`;
+};
+const formatDMS = (lat, lng) =>
+  `${decimalToDMS(lat, "N", "S")} ${decimalToDMS(lng, "E", "W")}`;
 const formatServerTime = (date) => {
-  const H = ["Minggu","Senin","Selasa","Rabu","Kamis","Jumat","Sabtu"][date.getDay()];
-  const B = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"][date.getMonth()];
-  return `${H}, ${date.getDate()} ${B} ${date.getFullYear()} ${String(date.getHours()).padStart(2,"0")}:${String(date.getMinutes()).padStart(2,"0")}:${String(date.getSeconds()).padStart(2,"0")}`;
+  const hari  = ["Minggu","Senin","Selasa","Rabu","Kamis","Jumat","Sabtu"][date.getDay()];
+  const bulan = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"][date.getMonth()];
+  const hh = String(date.getHours()).padStart(2,"0");
+  const mm = String(date.getMinutes()).padStart(2,"0");
+  const ss = String(date.getSeconds()).padStart(2,"0");
+  return `${hari}, ${date.getDate()} ${bulan} ${date.getFullYear()} ${hh}:${mm}:${ss}`;
 };
 
-const CameraCapture = ({ onFile, fotoUrl, onRemove }) => {
+const applyOverlay = async (file, pos) => {
+  let serverTime = new Date();
+  try {
+    const { data } = await supabase.rpc("get_server_time");
+    if (data) serverTime = new Date(data);
+  } catch {}
+
+  const { latitude, longitude } = pos.coords;
+  const dmsStr  = formatDMS(latitude, longitude);
+  const timeStr = formatServerTime(serverTime);
+
+  let bitmap;
+  try {
+    bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+  } catch {
+    bitmap = await new Promise((res, rej) => {
+      const i = new Image();
+      i.onload = () => res(i);
+      i.onerror = rej;
+      i.src = URL.createObjectURL(file);
+    });
+  }
+
+  const MAX_DIM = 1600;
+  let targetW = bitmap.width, targetH = bitmap.height;
+  if (Math.max(targetW, targetH) > MAX_DIM) {
+    const scale = MAX_DIM / Math.max(targetW, targetH);
+    targetW = Math.round(targetW * scale);
+    targetH = Math.round(targetH * scale);
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width  = targetW;
+  canvas.height = targetH;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(bitmap, 0, 0, targetW, targetH);
+  if (bitmap.close) bitmap.close();
+
+  const fontSize = Math.max(20, Math.round(targetW * 0.028));
+  const pad      = fontSize * 0.7;
+  const lineH    = fontSize * 1.6;
+  ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+  const boxW = Math.max(ctx.measureText(timeStr).width, ctx.measureText(dmsStr).width) + pad * 2.5;
+  const boxH = lineH * 2 + pad * 1.5;
+  const x    = pad;
+  const y    = canvas.height - boxH - pad;
+  ctx.fillStyle = "rgba(0,0,0,0.60)";
+  ctx.fillRect(x, y, boxW, boxH);
+  ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(timeStr, x + pad, y + pad + fontSize);
+  ctx.fillText(dmsStr,  x + pad, y + pad + fontSize + lineH);
+
+  return new Promise((res) => canvas.toBlob(res, "image/jpeg", 0.9));
+};
+
+const uploadFoto = async (file, kategori, pos) => {
+  const blob = await applyOverlay(file, pos);
+  const fileName = `p1-tl-${kategori}-${Date.now()}.jpg`;
+  const { data, error } = await supabase.storage
+    .from("foto-inspeksi").upload(fileName, blob, { contentType: "image/jpeg" });
+  if (error) throw new Error("Foto gagal diupload: " + error.message);
+  const { data: pub } = supabase.storage.from("foto-inspeksi").getPublicUrl(data.path);
+  return { name: fileName, url: pub.publicUrl, path: data.path };
+};
+
+// ── PhotoLightbox — preview foto full-screen sebelum dikirim ──────────────────
+// Tombol back HP menutup lightbox ini (bukan langsung keluar dari layar) —
+// lihat useBackableView di hooks/useBackableView.js.
+const PhotoLightbox = ({ url, onClose }) => {
+  useBackableView(!!url, onClose);
+
+  if (!url) return null;
+  return (
+    <div
+      onClick={() => goBack(onClose)}
+      style={{
+        position: "fixed", inset: 0, background: "rgba(0,0,0,0.92)", zIndex: 9999,
+        display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
+      }}
+    >
+      <div
+        onClick={() => goBack(onClose)}
+        style={{
+          position: "absolute", top: 44, right: 20, color: "#fff", fontSize: 26,
+          fontWeight: 700, cursor: "pointer", width: 36, height: 36, borderRadius: 18,
+          background: "rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center",
+        }}
+      >
+        ✕
+      </div>
+      <div style={{ position: "absolute", top: 46, left: 20, color: "#fff", fontSize: 12, opacity: 0.8 }}>
+        Ketuk di mana saja untuk menutup
+      </div>
+      <img
+        src={url}
+        alt="Preview foto"
+        onClick={(e) => e.stopPropagation()}
+        style={{ maxWidth: "100%", maxHeight: "100%", borderRadius: 10, objectFit: "contain" }}
+      />
+    </div>
+  );
+};
+
+// ── CameraCaptureSingle — 1 foto wajib, kamera & GPS sudah "hangat" ──────────
+const CameraCaptureSingle = ({ label, onFoto, foto, errorFoto, onPreview, requestAccess }) => {
   const [capState, setCapState] = useState("idle");
   const [permErr,  setPermErr]  = useState(null);
-  const fileRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const cachedPosRef  = useRef(null);
 
-  const checkPerms = async () => {
-    try { const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }); s.getTracks().forEach(t => t.stop()); } catch { throw new Error("camera"); }
-    await new Promise((r, j) => navigator.geolocation.getCurrentPosition(r, j, { enableHighAccuracy: true, timeout: 10000 }));
+  const handleCaptureClick = async () => {
+    setPermErr(null);
+    setCapState("checking");
+    try {
+      cachedPosRef.current = await requestAccess();
+      setCapState("idle");
+      fileInputRef.current?.click();
+    } catch {
+      setCapState("idle");
+      setPermErr("Izin kamera/lokasi diperlukan. Aktifkan di pengaturan browser.");
+    }
   };
 
-  const handleClick = async () => {
-    setPermErr(null); setCapState("checking");
-    try { await checkPerms(); setCapState("idle"); fileRef.current?.click(); }
-    catch (e) { setCapState("idle"); setPermErr(e.message === "camera" ? "Izin kamera diperlukan." : "Izin lokasi diperlukan."); }
-  };
-
-  const applyOverlay = async (file) => {
-    let serverTime = new Date();
-    try { const { data } = await supabase.rpc("get_server_time"); if (data) serverTime = new Date(data); } catch {}
-    const pos = await new Promise((r, j) => navigator.geolocation.getCurrentPosition(r, j, { enableHighAccuracy: true, timeout: 15000 }));
-    const img = await new Promise((r, j) => { const i = new Image(); i.onload = () => r(i); i.onerror = j; i.src = URL.createObjectURL(file); });
-    const canvas = document.createElement("canvas");
-    canvas.width = img.width; canvas.height = img.height;
-    const ctx = canvas.getContext("2d"); ctx.drawImage(img, 0, 0);
-    const fs = Math.max(20, Math.round(img.width * 0.028)), pad = fs * 0.7, lh = fs * 1.6;
-    const ts = formatServerTime(serverTime), ds = formatDMS(pos.coords.latitude, pos.coords.longitude);
-    ctx.font = `bold ${fs}px Arial,sans-serif`;
-    const bw = Math.max(ctx.measureText(ts).width, ctx.measureText(ds).width) + pad * 2.5, bh = lh * 2 + pad * 1.5;
-    ctx.fillStyle = "rgba(0,0,0,0.60)"; ctx.fillRect(pad, canvas.height - bh - pad, bw, bh);
-    ctx.fillStyle = "#ffffff"; ctx.fillText(ts, pad * 2, canvas.height - bh - pad + pad + fs); ctx.fillText(ds, pad * 2, canvas.height - bh - pad + pad + fs + lh);
-    return new Promise(r => canvas.toBlob(r, "image/jpeg", 0.92));
-  };
-
-  const handleChange = async (e) => {
-    const files = Array.from(e.target.files || []); if (!files.length) return;
+  const handleFileChange = async (e) => {
+    const file = (e.target.files || [])[0];
+    if (!file) return;
     setCapState("processing");
     try {
-      const blob = await applyOverlay(files[0]);
-      const name = `p1-tl-${Date.now()}.jpg`;
-      const { data, error } = await supabase.storage.from("foto-inspeksi").upload(name, blob, { contentType: "image/jpeg" });
-      if (error) { alert("⚠️ Upload gagal: " + error.message); return; }
-      const { data: pub } = supabase.storage.from("foto-inspeksi").getPublicUrl(data.path);
-      onFile({ url: pub.publicUrl, path: data.path });
-    } catch (err) { alert("⚠️ Gagal: " + err.message); }
-    finally { setCapState("idle"); e.target.value = ""; }
+      const result = await uploadFoto(file, label.replace(/\s+/g, "_").toLowerCase(), cachedPosRef.current);
+      onFoto(result);
+    } catch (err) {
+      alert("⚠️ " + err.message);
+    } finally {
+      setCapState("idle");
+      cachedPosRef.current = null;
+      e.target.value = "";
+    }
+  };
+
+  const removeFoto = async () => {
+    if (foto?.path) await supabase.storage.from("foto-inspeksi").remove([foto.path]).catch(() => {});
+    onFoto(null);
   };
 
   const isWorking = capState !== "idle";
+
   return (
-    <div style={{ marginBottom: 10 }}>
-      <div style={{ border: `2px dashed ${theme.border}`, borderRadius: 10, padding: "12px", textAlign: "center" }}>
-        {fotoUrl ? (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", background: theme.primaryLight, borderRadius: 8, fontSize: 12, color: theme.primary }}>
-            <span>✓ Foto tindak lanjut tersimpan</span>
-            <div onClick={onRemove} style={{ cursor: "pointer", fontWeight: 700, color: theme.danger }}>✕</div>
+    <div>
+      <div style={{
+        border: `2px dashed ${errorFoto ? theme.danger : theme.border}`, borderRadius: 10, padding: "12px",
+        background: errorFoto ? theme.dangerLight : "transparent",
+      }}>
+        {permErr && (
+          <div style={{ marginBottom: 8, padding: "6px 10px", borderRadius: 8, background: theme.dangerLight, color: theme.danger, fontSize: 12, fontWeight: 600 }}>
+            ⛔ {permErr}
+          </div>
+        )}
+        <input ref={fileInputRef} type="file" accept="image/*" capture="environment"
+          onChange={handleFileChange} style={{ display: "none" }} />
+        {foto ? (
+          <div style={{ padding: "8px 10px", background: theme.primaryLight, borderRadius: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <img
+                src={foto.url}
+                alt={foto.name}
+                onClick={() => onPreview?.(foto.url)}
+                style={{ width: 42, height: 42, borderRadius: 6, objectFit: "cover", cursor: "pointer", border: `1px solid ${theme.primary}`, flexShrink: 0 }}
+              />
+              <div style={{ flex: 1, fontSize: 12, color: theme.primary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                ✓ Foto tindak lanjut tersimpan
+              </div>
+              <div onClick={() => onPreview?.(foto.url)} style={{ cursor: "pointer", fontSize: 12, color: theme.primary, fontWeight: 700, flexShrink: 0 }}>
+                🔍 Lihat
+              </div>
+              <div onClick={removeFoto} style={{ cursor: "pointer", fontWeight: 700, color: theme.danger, flexShrink: 0 }}>✕</div>
+            </div>
           </div>
         ) : (
-          <>
-            {permErr && <div style={{ fontSize: 11, color: theme.danger, fontWeight: 600, marginBottom: 6 }}>⛔ {permErr}</div>}
+          <div style={{ textAlign: "center" }}>
             <div style={{ fontSize: 11, color: theme.textMuted, marginBottom: 8 }}>📷 Foto dokumentasi tindak lanjut</div>
-            <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={handleChange} style={{ display: "none" }} />
-            <Btn onClick={handleClick} variant="outline" style={{ padding: "7px 16px", fontSize: 12 }} disabled={isWorking}>
+            <Btn onClick={handleCaptureClick} variant="outline" style={{ padding: "7px 16px", fontSize: 12 }} disabled={isWorking}>
               {capState === "checking" ? "🔐 Cek izin..." : capState === "processing" ? "⏳ Memproses..." : "📷 Ambil Foto"}
             </Btn>
-          </>
+          </div>
         )}
       </div>
+      {errorFoto && <div style={{ fontSize: 11, color: theme.danger, fontWeight: 600, marginTop: 4 }}>⚠️ Foto wajib diambil.</div>}
     </div>
   );
 };
 
 // ── Form Tindak Lanjut per temuan ─────────────────────────────────────────────
-const TindakLanjutItem = ({ idx, temuan, tl, onChange }) => {
+const TindakLanjutItem = ({ idx, temuan, tl, onChange, onPreview, requestAccess }) => {
   const set = (k) => (v) => onChange(temuan.id, k, v);
   const handleFile = (fd) => onChange(temuan.id, "foto", fd);
-  const handleRemoveFoto = async () => {
-    if (tl.foto?.path) await supabase.storage.from("foto-inspeksi").remove([tl.foto.path]);
-    onChange(temuan.id, "foto", null);
-  };
 
   return (
     <div style={{ background: theme.surface, border: `1.5px solid ${theme.border}`, borderRadius: 14, padding: 16, marginBottom: 14 }}>
@@ -125,11 +272,18 @@ const TindakLanjutItem = ({ idx, temuan, tl, onChange }) => {
       />
       {tl.errorCatatan && <div style={{ fontSize: 11, color: theme.danger, fontWeight: 600, marginBottom: 8 }}>⚠️ Tindakan wajib diisi.</div>}
 
-      <div style={{ fontSize: 13, fontWeight: 600, color: theme.textSub, marginBottom: 6 }}>Foto Dokumentasi Tindak Lanjut</div>
-      <CameraCapture onFile={handleFile} fotoUrl={tl.foto?.url || null} onRemove={handleRemoveFoto} />
+      <div style={{ fontSize: 13, fontWeight: 600, color: theme.textSub, marginBottom: 6 }}>Foto Dokumentasi Tindak Lanjut (wajib)</div>
+      <CameraCaptureSingle
+        label={`Foto TL ${idx + 1}`}
+        onFoto={handleFile}
+        foto={tl.foto}
+        errorFoto={tl.errorFoto || false}
+        onPreview={onPreview}
+        requestAccess={requestAccess}
+      />
 
       {/* Tandai selesai */}
-      <div onClick={() => set("selesai")(!tl.selesai)} style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginTop: 6, padding: "10px 12px", borderRadius: 10, background: tl.selesai ? theme.successLight : theme.surfaceAlt, border: `1.5px solid ${tl.selesai ? theme.success : theme.border}` }}>
+      <div onClick={() => set("selesai")(!tl.selesai)} style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginTop: 12, padding: "10px 12px", borderRadius: 10, background: tl.selesai ? theme.successLight : theme.surfaceAlt, border: `1.5px solid ${tl.selesai ? theme.success : theme.border}` }}>
         <div style={{ width: 22, height: 22, borderRadius: 6, border: `2px solid ${tl.selesai ? theme.success : theme.border}`, background: tl.selesai ? theme.success : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
           {tl.selesai && <Icon name="check" size={13} color="#fff" />}
         </div>
@@ -149,8 +303,63 @@ const P1TindakLanjut = ({ onBack, onNav }) => {
   const [temuanList,   setTemuanList]   = useState([]);
   const [tl,           setTL]           = useState({});
   const [saving,       setSaving]       = useState(false);
+  const [previewUrl,   setPreviewUrl]   = useState(null);
+
+  // GPS/kamera di-"hangat"-kan sejak layar ini dibuka — sama seperti
+  // HSEFormScreen / P1FormScreen, supaya foto tindak lanjut langsung instan.
+  const { warmUp, coolDown, requestAccess } = useCameraGPS();
+  useEffect(() => {
+    warmUp();
+    return () => coolDown();
+  }, [warmUp, coolDown]);
+
+  // ── Draft persistence — hanya 1 slot, untuk kendaraan yang terakhir dibuka ──
+  const draftCreatedAtRef = useRef(null);
+  const [restoreCandidate, setRestoreCandidate] = useState(null); // { insp, tl } kalau ada draft valid
+
+  // ── Cleanup foto "orphan" — kalau layar ini di-unmount (user keluar
+  // sepenuhnya dari layar Tindak Lanjut) tanpa sempat Simpan, foto yang
+  // sudah terlanjur ke-upload untuk kendaraan yang sedang dikerjakan
+  // dihapus lagi dari storage. submittedRef di-reset tiap buka kendaraan
+  // baru (openDetail) supaya tidak salah menandai sesi yang belum disimpan.
+  const allFotoPaths = useRef([]);
+  const submittedRef = useRef(false);
+
+  useEffect(() => {
+    allFotoPaths.current = Object.values(tl).map((t) => t.foto?.path).filter(Boolean);
+  }, [tl]);
+
+  useEffect(() => {
+    return () => {
+      if (!submittedRef.current && allFotoPaths.current.length > 0) {
+        supabase.storage.from("foto-inspeksi").remove(allFotoPaths.current).catch(console.error);
+      }
+    };
+  }, []);
 
   useEffect(() => { loadData(); }, []);
+
+  useEffect(() => {
+    if (loading) return;
+    const draft = loadDraft();
+    if (!draft) return;
+    const age = Date.now() - (draft.createdAt || 0);
+    if (!draft.createdAt || age > DRAFT_EXPIRE_MS) { clearDraft(); return; }
+    const insp = inspeksiList.find((i) => i.id === draft.inspId);
+    if (insp) {
+      setRestoreCandidate({ insp, tl: draft.tl || {}, createdAt: draft.createdAt });
+    } else {
+      clearDraft();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, inspeksiList]);
+
+  // Auto-save progres tindak lanjut selama layar detail terbuka
+  useEffect(() => {
+    if (!selected) return;
+    if (!draftCreatedAtRef.current) draftCreatedAtRef.current = Date.now();
+    saveDraft({ createdAt: draftCreatedAtRef.current, inspId: selected.id, tl });
+  }, [selected, tl]);
 
   const loadData = async () => {
     setLoading(true);
@@ -166,12 +375,19 @@ const P1TindakLanjut = ({ onBack, onNav }) => {
     setLoading(false);
   };
 
-  const openDetail = (insp) => {
+  const openDetail = (insp, restoredTl, restoredCreatedAt) => {
+    submittedRef.current = false;
+    draftCreatedAtRef.current = restoredTl ? (restoredCreatedAt || Date.now()) : null;
+    setRestoreCandidate(null);
     setSelected(insp);
     const list = insp.inspeksi_p1_temuan || [];
     setTemuanList(list);
     const init = {};
-    list.forEach(t => { init[t.id] = { catatan: "", foto: null, selesai: false, errorCatatan: false }; });
+    list.forEach(t => {
+      init[t.id] = restoredTl?.[t.id]
+        ? { catatan: "", foto: null, selesai: false, errorCatatan: false, errorFoto: false, ...restoredTl[t.id] }
+        : { catatan: "", foto: null, selesai: false, errorCatatan: false, errorFoto: false };
+    });
     setTL(init);
   };
 
@@ -179,13 +395,15 @@ const P1TindakLanjut = ({ onBack, onNav }) => {
     setTL(prev => ({ ...prev, [temuanId]: { ...prev[temuanId], [key]: val } }));
 
   const handleSave = async () => {
-    // Validasi — minimal satu catatan
+    // Validasi — tindakan DAN foto wajib untuk setiap temuan
     let valid = true;
     const updated = { ...tl };
     Object.entries(tl).forEach(([id, t]) => {
-      if (!t.catatan.trim()) { updated[id] = { ...t, errorCatatan: true }; valid = false; }
+      const eC = !t.catatan.trim();
+      const eF = !t.foto;
+      if (eC || eF) { updated[id] = { ...t, errorCatatan: eC, errorFoto: eF }; valid = false; }
     });
-    if (!valid) { setTL(updated); alert("Isi tindakan untuk setiap temuan!"); return; }
+    if (!valid) { setTL(updated); alert("Lengkapi tindakan dan foto dokumentasi untuk setiap temuan!"); return; }
 
     setSaving(true);
     try {
@@ -211,6 +429,9 @@ const P1TindakLanjut = ({ onBack, onNav }) => {
         await supabase.from("inspeksi_p1").update({ status: "selesai" }).eq("id", selected.id);
       }
 
+      clearDraft();
+      draftCreatedAtRef.current = null;
+      submittedRef.current = true;
       alert("✓ Tindak lanjut berhasil disimpan!");
       setSelected(null);
       loadData();
@@ -220,6 +441,30 @@ const P1TindakLanjut = ({ onBack, onNav }) => {
       setSaving(false);
     }
   };
+
+  const restoreBanner = restoreCandidate && (
+    <div style={{
+      margin: "0 16px 12px", padding: "10px 14px", borderRadius: 10,
+      background: "#FEF3C7", color: "#92400E", fontSize: 12, fontWeight: 600,
+      display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap",
+    }}>
+      <span>♻️ Ada progres tindak lanjut <b>{restoreCandidate.insp.nomor_polisi}</b> yang belum tersimpan.</span>
+      <div style={{ display: "flex", gap: 12, flexShrink: 0 }}>
+        <span
+          onClick={() => openDetail(restoreCandidate.insp, restoreCandidate.tl, restoreCandidate.createdAt)}
+          style={{ cursor: "pointer", textDecoration: "underline" }}
+        >
+          Lanjutkan
+        </span>
+        <span
+          onClick={() => { clearDraft(); setRestoreCandidate(null); }}
+          style={{ cursor: "pointer" }}
+        >
+          ✕ Buang
+        </span>
+      </div>
+    </div>
+  );
 
   // ── Detail tindak lanjut ──────────────────────────────────────────────────
   if (selected) {
@@ -241,10 +486,13 @@ const P1TindakLanjut = ({ onBack, onNav }) => {
         <div style={{ flex: 1, overflowY: "auto", padding: "20px 16px", paddingBottom: 90 }}>
           <SectionLabel>Temuan yang Perlu Ditindaklanjuti</SectionLabel>
           <div style={{ fontSize: 13, color: theme.textMuted, marginBottom: 16 }}>
-            Isi tindakan untuk setiap temuan. Centang <b>selesai</b> jika sudah tuntas ditangani.
+            Isi tindakan dan foto dokumentasi untuk setiap temuan (keduanya wajib). Centang <b>selesai</b> jika sudah tuntas ditangani.
           </div>
           {temuanList.map((t, i) => (
-            <TindakLanjutItem key={t.id} idx={i} temuan={t} tl={tl[t.id] || {}} onChange={updateTL} />
+            <TindakLanjutItem
+              key={t.id} idx={i} temuan={t} tl={tl[t.id] || {}}
+              onChange={updateTL} onPreview={setPreviewUrl} requestAccess={requestAccess}
+            />
           ))}
         </div>
 
@@ -253,6 +501,8 @@ const P1TindakLanjut = ({ onBack, onNav }) => {
             {saving ? "Menyimpan..." : "Simpan Tindak Lanjut"}
           </Btn>
         </div>
+
+        <PhotoLightbox url={previewUrl} onClose={() => setPreviewUrl(null)} />
       </div>
     );
   }
@@ -267,6 +517,8 @@ const P1TindakLanjut = ({ onBack, onNav }) => {
         <div style={{ fontWeight: 800, fontSize: 18, color: theme.text }}>Tindak Lanjut</div>
         <div style={{ fontSize: 13, color: theme.textMuted, marginTop: 2 }}>Kendaraan dengan temuan yang belum diselesaikan</div>
       </div>
+
+      {restoreBanner}
 
       <div style={{ padding: "20px 16px" }}>
         {loading ? (
