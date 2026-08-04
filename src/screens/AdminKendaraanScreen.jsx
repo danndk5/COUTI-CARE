@@ -14,10 +14,12 @@ const KATEGORI_OPTIONS = [
 
 const emptyForm = {
   nomor_polisi: "",
+  nomor_lambung: "",
   transportir: "",
   kapasitas_mt: "",
   jumlah_kompartemen: "",
   kategori_mt: "",
+  tanggal_stnk: "",
   masa_berlaku_head_truck: "",
   masa_berlaku_tangki: "",
 };
@@ -35,26 +37,81 @@ const formatTanggal = (dateStr) => {
   return new Date(dateStr).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
 };
 
-// Konversi berbagai format tanggal Excel (serial number ATAU string) ke YYYY-MM-DD
+// ── Hitung selisih tahun/bulan/hari antara 2 tanggal (generic) ───────────────
+const diffYMD = (start, end) => {
+  let years = end.getFullYear() - start.getFullYear();
+  let months = end.getMonth() - start.getMonth();
+  let days = end.getDate() - start.getDate();
+  if (days < 0) {
+    months -= 1;
+    const prevMonthLastDay = new Date(end.getFullYear(), end.getMonth(), 0).getDate();
+    days += prevMonthLastDay;
+  }
+  if (months < 0) {
+    years -= 1;
+    months += 12;
+  }
+  return { years, months, days };
+};
+
+// ── Hitung Umur MT — dihitung ULANG setiap render, bukan disimpan statis ─────
+// Supaya selalu update otomatis setiap hari begitu halaman dibuka.
+const calcUmurMT = (tanggalStnk) => {
+  if (!tanggalStnk) return null;
+  const start = new Date(tanggalStnk);
+  const now = new Date();
+  if (isNaN(start.getTime())) return null;
+  const { years, months, days } = diffYMD(start, now);
+  return `${years} Tahun, ${months} Bulan, ${days} Hari`;
+};
+
+// ── Hitung sisa waktu mundur sampai tanggal masa berlaku ─────────────────────
+// null kalau tanggal sudah lewat (dianggap kadaluarsa, ditangani terpisah)
+const calcSisaWaktu = (tanggalTarget) => {
+  if (!tanggalTarget) return null;
+  const target = new Date(tanggalTarget);
+  const now = new Date();
+  if (isNaN(target.getTime()) || target <= now) return null;
+  const { years, months, days } = diffYMD(now, target);
+  return `${years} Tahun, ${months} Bulan, ${days} Hari`;
+};
+
+// ── Nama bulan Indonesia untuk parsing tanggal teks ("03 Oktober 2028") ──────
+const INDO_MONTHS = {
+  januari: 1, februari: 2, maret: 3, april: 4, mei: 5, juni: 6,
+  juli: 7, agustus: 8, september: 9, oktober: 10, november: 11, desember: 12,
+};
+
+// Konversi berbagai format tanggal Excel (serial number / DD-MM-YYYY / "DD Bulan YYYY") ke YYYY-MM-DD
 const parseExcelDate = (val) => {
   if (!val) return null;
+
   if (typeof val === "number") {
-    // Excel date serial number
     const date = XLSX.SSF.parse_date_code(val);
     if (!date) return null;
-    const mm = String(date.m).padStart(2, "0");
-    const dd = String(date.d).padStart(2, "0");
-    return `${date.y}-${mm}-${dd}`;
+    return `${date.y}-${String(date.m).padStart(2, "0")}-${String(date.d).padStart(2, "0")}`;
   }
+
   const str = String(val).trim();
-  // Coba format DD/MM/YYYY atau DD-MM-YYYY
-  const match = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
-  if (match) {
-    const [, d, m, y] = match;
+
+  // Format "03 Oktober 2028" (nama bulan Indonesia)
+  const textMatch = str.match(/^(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})$/);
+  if (textMatch) {
+    const [, d, monthName, y] = textMatch;
+    const monthNum = INDO_MONTHS[monthName.toLowerCase()];
+    if (monthNum) return `${y}-${String(monthNum).padStart(2, "0")}-${d.padStart(2, "0")}`;
+  }
+
+  // Format DD/MM/YYYY atau DD-MM-YYYY
+  const numMatch = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (numMatch) {
+    const [, d, m, y] = numMatch;
     return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
   }
-  // Coba format YYYY-MM-DD (sudah benar)
+
+  // Sudah format YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+
   return null;
 };
 
@@ -66,11 +123,24 @@ const normalizeKategori = (val) => {
   return "";
 };
 
-// Ambil hanya angka dari input, format jadi "X KL" (dipakai saat admin ketik manual)
+// Ambil hanya angka dari input, format jadi "X KL"
 const formatKapasitas = (val) => {
   const digits = String(val).replace(/[^0-9]/g, "");
   if (!digits) return "";
   return `${parseInt(digits, 10)} KL`;
+};
+
+// ── Helper baca kolom Excel dengan nama header fleksibel ─────────────────────
+const normalizeHeader = (s) => String(s).toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+const getVal = (row, aliases) => {
+  const keys = Object.keys(row);
+  for (const alias of aliases) {
+    const target = normalizeHeader(alias);
+    const foundKey = keys.find((k) => normalizeHeader(k) === target);
+    if (foundKey !== undefined && row[foundKey] !== "") return row[foundKey];
+  }
+  return "";
 };
 
 // ── FormModal — tambah / edit kendaraan (manual) ─────────────────────────────
@@ -94,11 +164,12 @@ const FormModal = ({ initial, onClose, onSaved }) => {
     try {
       const payload = {
         nomor_polisi: form.nomor_polisi.trim().toUpperCase(),
-        nomor_lambung: null,
+        nomor_lambung: form.nomor_lambung?.trim() || null,
         transportir: form.transportir.trim(),
         kapasitas_mt: form.kapasitas_mt.trim(),
         jumlah_kompartemen: parseInt(form.jumlah_kompartemen),
         kategori_mt: form.kategori_mt,
+        tanggal_stnk: form.tanggal_stnk || null,
         masa_berlaku_head_truck: form.masa_berlaku_head_truck || null,
         masa_berlaku_tangki: form.masa_berlaku_tangki || null,
         updated_at: new Date().toISOString(),
@@ -148,7 +219,8 @@ const FormModal = ({ initial, onClose, onSaved }) => {
           </div>
         )}
 
-        <Input label="Transportir" placeholder="PT. ..." value={form.transportir} onChange={(v) => setF("transportir")(v.toUpperCase())} />
+        <Input label="Nomor Lambung (opsional)" placeholder="Contoh: BTG-01" value={form.nomor_lambung} onChange={setF("nomor_lambung")} />
+        <Input label="Pemilik Mobil" placeholder="PT. ..." value={form.transportir} onChange={(v) => setF("transportir")(v.toUpperCase())} />
         <Input label="Kapasitas MT" placeholder="Contoh: 10" value={form.kapasitas_mt} onChange={(v) => setF("kapasitas_mt")(formatKapasitas(v))} />
         <Input label="Jumlah Kompartemen" placeholder="1 / 2 / 3" value={form.jumlah_kompartemen} onChange={setF("jumlah_kompartemen")} />
 
@@ -171,6 +243,25 @@ const FormModal = ({ initial, onClose, onSaved }) => {
               </div>
             ))}
           </div>
+        </div>
+
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: theme.text, marginBottom: 6 }}>Tanggal Pembuatan STNK</div>
+          <input
+            type="date"
+            value={form.tanggal_stnk || ""}
+            onChange={(e) => setF("tanggal_stnk")(e.target.value)}
+            style={{
+              width: "100%", padding: "10px 12px", borderRadius: 10,
+              border: `1.5px solid ${theme.border}`, fontSize: 13,
+              fontFamily: "'DM Sans', sans-serif", boxSizing: "border-box", outline: "none",
+            }}
+          />
+          {form.tanggal_stnk && (
+            <div style={{ fontSize: 11, color: theme.primary, fontWeight: 600, marginTop: 6 }}>
+              Umur MT saat ini: {calcUmurMT(form.tanggal_stnk)}
+            </div>
+          )}
         </div>
 
         <div style={{ marginBottom: 12 }}>
@@ -217,20 +308,22 @@ const FormModal = ({ initial, onClose, onSaved }) => {
 
 // ── ImportModal — import massal dari Excel ───────────────────────────────────
 const ImportModal = ({ onClose, onSaved }) => {
-  const [rows, setRows] = useState([]);      // hasil parse file
+  const [rows, setRows] = useState([]);
   const [fileName, setFileName] = useState("");
   const [importing, setImporting] = useState(false);
-  const [result, setResult] = useState(null); // { success, failed, errors }
+  const [result, setResult] = useState(null);
   const fileInputRef = useRef(null);
 
   const downloadTemplate = () => {
     const headers = [
-      "Nomor Polisi", "Transportir", "Kapasitas MT", "Jumlah Kompartemen",
-      "Kategori MT", "Masa Berlaku Head Truck", "Masa Berlaku Tangki",
+      "Nomor Lambung", "Nomor Polisi", "Pemilik Mobil", "Kapasitas Max (KL)",
+      "Kompartment", "Kategori MT", "Tanggal Pembuatan Mobil (STNK)",
+      "Masa Berlaku Head Truck", "Masa Berlaku Tangki",
     ];
     const contoh = [
-      "B 1234 XY", "PT Contoh Transportir", "10 KL", "2",
-      "MT Merah Putih", "31/12/2027", "31/12/2027",
+      "BTG-01", "B 9697 SEI", "PT. Contoh Transportir", "24",
+      "3", "MT Merah Putih", "03 Oktober 2023",
+      "03 Oktober 2028", "03 Oktober 2027",
     ];
     const ws = XLSX.utils.aoa_to_sheet([headers, contoh]);
     const wb = XLSX.utils.book_new();
@@ -252,39 +345,28 @@ const ImportModal = ({ onClose, onSaved }) => {
         const json = XLSX.utils.sheet_to_json(sheet, { defval: "" });
 
         const parsed = json.map((row, idx) => {
-          const nomor_polisi = String(
-            row["Nomor Polisi"] || row["nomor_polisi"] || row["Nopol"] || ""
-          ).trim().toUpperCase();
-          const transportir = String(
-            row["Transportir"] || row["transportir"] || ""
-          ).trim();
-          const kapasitas_mt = String(
-            row["Kapasitas MT"] || row["kapasitas_mt"] || ""
-          ).trim();
-          const jumlah_kompartemen = parseInt(
-            row["Jumlah Kompartemen"] || row["jumlah_kompartemen"] || 0
-          ) || null;
-          const kategori_mt = normalizeKategori(
-            row["Kategori MT"] || row["kategori_mt"] || ""
-          );
-          const masa_berlaku_head_truck = parseExcelDate(
-            row["Masa Berlaku Head Truck"] || row["masa_berlaku_head_truck"]
-          );
-          const masa_berlaku_tangki = parseExcelDate(
-            row["Masa Berlaku Tangki"] || row["masa_berlaku_tangki"]
-          );
+          const nomor_lambung = String(getVal(row, ["Nomor Lambung"])).trim() || null;
+          const nomor_polisi  = String(getVal(row, ["Nomor Polisi"])).trim().toUpperCase();
+          const transportir   = String(getVal(row, ["Pemilik Mobil", "Transportir"])).trim();
+          const kapasitasRaw  = getVal(row, ["Kapasitas Max (KL)", "Kapasitas MT", "Kapasitas"]);
+          const kapasitas_mt  = kapasitasRaw ? formatKapasitas(kapasitasRaw) : "";
+          const jumlah_kompartemen = parseInt(getVal(row, ["Kompartment", "Kompartemen", "Jumlah Kompartemen"])) || null;
+          const kategori_mt   = normalizeKategori(getVal(row, ["Kategori MT"]));
+          const tanggal_stnk  = parseExcelDate(getVal(row, ["Tanggal Pembuatan Mobil (STNK)", "Tanggal Pembuatan STNK", "Tanggal STNK"]));
+          const masa_berlaku_head_truck = parseExcelDate(getVal(row, ["Masa Berlaku Head Truck"]));
+          const masa_berlaku_tangki     = parseExcelDate(getVal(row, ["Masa Berlaku Tangki"]));
 
           const rowErrors = [];
           if (!nomor_polisi) rowErrors.push("Nomor Polisi kosong");
-          if (!transportir) rowErrors.push("Transportir kosong");
-          if (!kapasitas_mt) rowErrors.push("Kapasitas MT kosong");
-          if (!jumlah_kompartemen) rowErrors.push("Jumlah Kompartemen tidak valid");
+          if (!transportir) rowErrors.push("Pemilik Mobil / Transportir kosong");
+          if (!kapasitas_mt) rowErrors.push("Kapasitas MT tidak valid");
+          if (!jumlah_kompartemen) rowErrors.push("Kompartment tidak valid");
           if (!kategori_mt) rowErrors.push("Kategori MT tidak dikenali (isi 'MT Merah Putih' atau 'MT Industri')");
 
           return {
-            _rowIndex: idx + 2, // +2 karena baris 1 = header, Excel mulai dari 1
-            nomor_polisi, transportir, kapasitas_mt, jumlah_kompartemen,
-            kategori_mt, masa_berlaku_head_truck, masa_berlaku_tangki,
+            _rowIndex: idx + 2,
+            nomor_lambung, nomor_polisi, transportir, kapasitas_mt, jumlah_kompartemen,
+            kategori_mt, tanggal_stnk, masa_berlaku_head_truck, masa_berlaku_tangki,
             _errors: rowErrors,
           };
         });
@@ -307,17 +389,18 @@ const ImportModal = ({ onClose, onSaved }) => {
     try {
       const payload = validRows.map((r) => ({
         nomor_polisi: r.nomor_polisi,
-        nomor_lambung: null,
+        nomor_lambung: r.nomor_lambung,
         transportir: r.transportir,
         kapasitas_mt: r.kapasitas_mt,
         jumlah_kompartemen: r.jumlah_kompartemen,
         kategori_mt: r.kategori_mt,
+        tanggal_stnk: r.tanggal_stnk,
         masa_berlaku_head_truck: r.masa_berlaku_head_truck,
         masa_berlaku_tangki: r.masa_berlaku_tangki,
         updated_at: new Date().toISOString(),
       }));
 
-      const { error, count } = await supabase
+      const { error } = await supabase
         .from("kendaraan")
         .upsert(payload, { onConflict: "nomor_polisi" });
 
@@ -349,10 +432,11 @@ const ImportModal = ({ onClose, onSaved }) => {
         {!result && (
           <>
             <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 14, lineHeight: 1.6 }}>
-              Upload file Excel (.xlsx) dengan kolom: <b>Nomor Polisi</b>, <b>Transportir</b>,
-              <b> Kapasitas MT</b>, <b>Jumlah Kompartemen</b>, <b>Kategori MT</b>
-              (isi "MT Merah Putih" atau "MT Industri"), <b>Masa Berlaku Head Truck</b>,
-              <b> Masa Berlaku Tangki</b> (format DD/MM/YYYY).
+              Upload file Excel dengan kolom: <b>Nomor Lambung</b> (opsional), <b>Nomor Polisi</b>,
+              <b> Pemilik Mobil</b>, <b>Kapasitas Max (KL)</b>, <b>Kompartment</b>, <b>Kategori MT</b>
+              (isi "MT Merah Putih" atau "MT Industri"), <b>Tanggal Pembuatan Mobil (STNK)</b>,
+              <b> Masa Berlaku Head Truck</b>, <b>Masa Berlaku Tangki</b>.
+              Format tanggal bebas: "03 Oktober 2028" atau "03/10/2028".
             </div>
 
             <Btn onClick={downloadTemplate} variant="outline" style={{ marginBottom: 14, fontSize: 13 }}>
@@ -452,13 +536,20 @@ const AdminKendaraanScreen = ({ role, onNav, onBack }) => {
   };
 
   const handleExport = () => {
-    const headers = ["Nomor Polisi", "Transportir", "Kapasitas MT", "Jumlah Kompartemen", "Kategori MT", "Masa Berlaku Head Truck", "Masa Berlaku Tangki"];
+    const headers = [
+      "Nomor Lambung", "Nomor Polisi", "Pemilik Mobil", "Kapasitas Max (KL)",
+      "Kompartment", "Kategori MT", "Tanggal Pembuatan Mobil (STNK)", "Umur MT",
+      "Masa Berlaku Head Truck", "Masa Berlaku Tangki",
+    ];
     const rows = filteredList.map((k) => [
+      k.nomor_lambung || "",
       k.nomor_polisi,
       k.transportir || "",
       k.kapasitas_mt || "",
       k.jumlah_kompartemen || "",
       k.kategori_mt === "merah_putih" ? "MT Merah Putih" : k.kategori_mt === "industri" ? "MT Industri" : (k.kategori_mt || ""),
+      k.tanggal_stnk || "",
+      calcUmurMT(k.tanggal_stnk) || "",
       k.masa_berlaku_head_truck || "",
       k.masa_berlaku_tangki || "",
     ]);
@@ -527,12 +618,15 @@ const AdminKendaraanScreen = ({ role, onNav, onBack }) => {
             const statusHT = cekMasaBerlaku(k.masa_berlaku_head_truck);
             const statusTK = cekMasaBerlaku(k.masa_berlaku_tangki);
             const adaWarning = statusHT === "expired" || statusHT === "warning" || statusTK === "expired" || statusTK === "warning";
+            const umurMT = calcUmurMT(k.tanggal_stnk);
 
             return (
               <Card key={k.id} style={{ marginBottom: 12, padding: "14px 16px" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
                   <div>
-                    <div style={{ fontWeight: 700, fontSize: 15, color: theme.text }}>{k.nomor_polisi}</div>
+                    <div style={{ fontWeight: 700, fontSize: 15, color: theme.text }}>
+                      {k.nomor_polisi} {k.nomor_lambung && <span style={{ fontWeight: 500, fontSize: 12, color: theme.textMuted }}>· {k.nomor_lambung}</span>}
+                    </div>
                     <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>{k.transportir}</div>
                   </div>
                   {adaWarning && (
@@ -546,20 +640,34 @@ const AdminKendaraanScreen = ({ role, onNav, onBack }) => {
                   {k.kapasitas_mt} · {k.jumlah_kompartemen} kompartemen · {k.kategori_mt === "merah_putih" ? "MT Merah Putih" : k.kategori_mt === "industri" ? "MT Industri" : "-"}
                 </div>
 
-                <div style={{ display: "flex", gap: 12, fontSize: 11, marginBottom: 4 }}>
-                  <div style={{ color: statusHT === "expired" ? theme.danger : statusHT === "warning" ? "#F59E0B" : theme.textMuted }}>
-                    🚛 Head Truck: {formatTanggal(k.masa_berlaku_head_truck)}
-                    {statusHT === "expired" && " (Kadaluarsa)"}
-                    {statusHT === "warning" && " (Segera habis)"}
+                {umurMT && (
+                  <div style={{ fontSize: 11, color: theme.primary, fontWeight: 600, marginBottom: 4 }}>
+                    Umur MT: {umurMT} <span style={{ color: theme.textMuted, fontWeight: 400 }}>(STNK: {formatTanggal(k.tanggal_stnk)})</span>
                   </div>
-                </div>
-                <div style={{ display: "flex", gap: 12, fontSize: 11, marginBottom: 12 }}>
-                  <div style={{ color: statusTK === "expired" ? theme.danger : statusTK === "warning" ? "#F59E0B" : theme.textMuted }}>
-                    🛢️ Tangki: {formatTanggal(k.masa_berlaku_tangki)}
-                    {statusTK === "expired" && " (Kadaluarsa)"}
-                    {statusTK === "warning" && " (Segera habis)"}
-                  </div>
-                </div>
+                )}
+
+                {(() => {
+                  const sisaHT = calcSisaWaktu(k.masa_berlaku_head_truck);
+                  const sisaTK = calcSisaWaktu(k.masa_berlaku_tangki);
+                  return (
+                    <>
+                      <div style={{ display: "flex", gap: 12, fontSize: 11, marginBottom: 4 }}>
+                        <div style={{ color: statusHT === "expired" ? theme.danger : statusHT === "warning" ? "#F59E0B" : theme.textMuted }}>
+                          Head Truck: {formatTanggal(k.masa_berlaku_head_truck)}
+                          {statusHT === "expired" && " (Kadaluarsa)"}
+                          {statusHT !== "expired" && sisaHT && ` (${sisaHT})`}
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", gap: 12, fontSize: 11, marginBottom: 12 }}>
+                        <div style={{ color: statusTK === "expired" ? theme.danger : statusTK === "warning" ? "#F59E0B" : theme.textMuted }}>
+                          Tangki: {formatTanggal(k.masa_berlaku_tangki)}
+                          {statusTK === "expired" && " (Kadaluarsa)"}
+                          {statusTK !== "expired" && sisaTK && ` (${sisaTK})`}
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
 
                 <div style={{ display: "flex", gap: 8, borderTop: `1px solid ${theme.border}`, paddingTop: 10 }}>
                   <Btn onClick={() => { setEditing(k); setShowForm(true); }} variant="ghost" style={{ flex: 1, fontSize: 12, padding: "8px" }}>

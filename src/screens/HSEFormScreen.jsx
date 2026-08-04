@@ -78,6 +78,16 @@ const formatTanggal = (val) => {
     return new Date(val).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
   } catch { return val; }
 };
+// Cek apakah tanggal masa berlaku (Head Truck / Tangki) sudah lewat hari ini.
+// Kalau kosong/tidak valid, dianggap TIDAK kedaluwarsa (biar tidak memblokir kalau datanya memang belum diisi admin).
+const isExpired = (val) => {
+  if (!val) return false;
+  const d = new Date(val);
+  if (isNaN(d.getTime())) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return d < today;
+};
 
 // ── applyOverlay (shared) ─────────────────────────────────────────────────────
 const applyOverlay = async (file, pos) => {
@@ -385,10 +395,12 @@ const CameraCaptureMulti = ({ kategori, fotoList, onFotoList, onPreview, request
 };
 
 // ── InfoRow — baris info kendaraan read-only dari database ────────────────────
-const InfoRow = ({ label, value }) => (
+const InfoRow = ({ label, value, danger }) => (
   <div style={{ display: "flex", justifyContent: "space-between", padding: "9px 0", borderBottom: `1px solid ${theme.border}` }}>
     <div style={{ fontSize: 12, color: theme.textMuted }}>{label}</div>
-    <div style={{ fontSize: 13, fontWeight: 700, color: theme.text, textAlign: "right" }}>{value || "-"}</div>
+    <div style={{ fontSize: 13, fontWeight: 700, color: danger ? theme.danger : theme.text, textAlign: "right" }}>
+      {value || "-"}{danger ? " ⚠️" : ""}
+    </div>
   </div>
 );
 
@@ -480,6 +492,7 @@ const HSEFormScreen = ({ onBack, onNav }) => {
         setLookupStatus(draft.lookupStatus || "idle");
         setCheckpoints(draft.checkpoints && draft.checkpoints.length ? draft.checkpoints : initCheckpoints());
         setFotoTemuan(draft.fotoTemuan || []);
+        setRiwayatSebelumnya(draft.riwayatSebelumnya || []);
         draftCreatedAtRef.current = draft.createdAt || Date.now();
         setShowRestoreBanner(true);
       }
@@ -493,8 +506,8 @@ const HSEFormScreen = ({ onBack, onNav }) => {
       step !== "sop" || sopPage > 0 || kendaraan.polisi.trim() || kategoriMT || fotoTemuan.length > 0;
     if (!hasProgress) { clearDraft(); draftCreatedAtRef.current = null; return; }
     if (!draftCreatedAtRef.current) draftCreatedAtRef.current = Date.now();
-    saveDraft({ createdAt: draftCreatedAtRef.current, step, sopPage, kendaraan, kategoriMT, lookupStatus, checkpoints, fotoTemuan });
-  }, [ready, step, sopPage, kendaraan, kategoriMT, lookupStatus, checkpoints, fotoTemuan]);
+    saveDraft({ createdAt: draftCreatedAtRef.current, step, sopPage, kendaraan, kategoriMT, lookupStatus, checkpoints, fotoTemuan, riwayatSebelumnya });
+  }, [ready, step, sopPage, kendaraan, kategoriMT, lookupStatus, checkpoints, fotoTemuan, riwayatSebelumnya]);
 
   const resetSemua = () => {
     clearDraft();
@@ -623,6 +636,10 @@ const HSEFormScreen = ({ onBack, onNav }) => {
       alert("Nomor Polisi tidak terdaftar di database Pertamina. Uji kedap tidak dapat dilanjutkan — hubungi admin untuk registrasi kendaraan terlebih dahulu.");
       return;
     }
+    if (isExpired(kendaraan.masaBerlakuHeadTruck) || isExpired(kendaraan.masaBerlakuTangki)) {
+      alert("Masa berlaku Head Truck/Tangki kendaraan ini sudah kedaluwarsa. Uji kedap tidak dapat dilanjutkan — hubungi admin untuk perpanjangan/registrasi ulang.");
+      return;
+    }
     setStep("kategori");
   };
 
@@ -658,15 +675,22 @@ const HSEFormScreen = ({ onBack, onNav }) => {
     setStep("ringkasan");
   };
 
-  // Submit sesungguhnya — dipanggil dari layar Ringkasan setelah HSE mengecek ulang datanya
+  // Submit sesungguhnya — dipanggil dari layar Ringkasan setelah HSE mengecek ulang datanya.
+  // Catatan atomicity: tidak pakai transaksi database asli (butuh RPC baru di sisi Supabase).
+  // Sebagai gantinya, kalau insert checkpoint/foto temuan gagal SETELAH baris inspeksi_hse
+  // terlanjur terbuat, baris itu langsung dihapus lagi (rollback manual) supaya tidak ada
+  // record "setengah jadi" yang nyangkut di database. submittedRef juga baru diset true
+  // setelah SEMUA insert berhasil, supaya cleanup foto orphan (efek unmount) tetap jalan
+  // kalau submit gagal dan user keluar dari layar ini.
   const handleSubmit = async () => {
     const e = validateUjiKedap();
     setErrors(e);
     if (Object.keys(e).length > 0) { alert("Lengkapi semua data uji kedap!"); setStep("ujikedap"); return; }
 
     setSubmitting(true);
+    let inspData = null;
     try {
-      const { data: inspData, error: inspErr } = await supabase
+      const { data, error: inspErr } = await supabase
         .from("inspeksi_hse").insert([{
           user_id:            currentUser,
           nomor_polisi:       kendaraan.polisi.trim().toUpperCase(),
@@ -679,8 +703,7 @@ const HSEFormScreen = ({ onBack, onNav }) => {
           status:             statusAkhir === "kedap" ? "lulus" : "tidak_lulus",
         }]).select().single();
       if (inspErr) throw inspErr;
-
-      submittedRef.current = true;
+      inspData = data;
 
       const { error: cpErr } = await supabase.from("inspeksi_hse_checkpoint").insert(
         checkpoints
@@ -708,6 +731,8 @@ const HSEFormScreen = ({ onBack, onNav }) => {
       // Catatan: kendaraan TIDAK di-upsert lagi dari sisi HSE — data master
       // sepenuhnya dikelola oleh admin Pertamina, HSE hanya membaca (read-only).
 
+      // Semua insert berhasil — baru sekarang dianggap benar-benar tersimpan.
+      submittedRef.current = true;
       clearDraft();
 
       alert(statusAkhir === "kedap"
@@ -715,7 +740,12 @@ const HSEFormScreen = ({ onBack, onNav }) => {
         : "Kendaraan TIDAK LULUS Uji Kedap. Data temuan berhasil di Unggah.");
       onNav("dashboard");
     } catch (err) {
-      alert("Gagal menyimpan: " + err.message);
+      // Rollback manual: kalau baris inspeksi_hse sempat terbuat tapi data
+      // turunannya (checkpoint/foto temuan) gagal, hapus lagi baris itu.
+      if (inspData?.id) {
+        await supabase.from("inspeksi_hse").delete().eq("id", inspData.id).catch(() => {});
+      }
+      alert("Gagal menyimpan: " + err.message + "\n\nData belum tersimpan. Silakan coba kirim ulang.");
     } finally {
       setSubmitting(false);
     }
@@ -801,7 +831,6 @@ const HSEFormScreen = ({ onBack, onNav }) => {
                 ⛔ Nomor Polisi tidak terdaftar di database Pertamina. Hubungi admin untuk registrasi kendaraan terlebih dahulu.
               </div>
             )}
-            {errors.polisi && <div style={{ fontSize: 12, color: theme.danger, marginTop: 6 }}>⚠️ Nomor Polisi wajib diisi.</div>}
           </div>
 
           {lookupStatus === "found" && (
@@ -810,8 +839,20 @@ const HSEFormScreen = ({ onBack, onNav }) => {
               <InfoRow label="Kapasitas MT" value={kendaraan.kapasitas} />
               <InfoRow label="Jumlah Kompartemen" value={kendaraan.kompartemen} />
               <InfoRow label="Transportir" value={kendaraan.transportir} />
-              <InfoRow label="Masa Berlaku Head Truck" value={formatTanggal(kendaraan.masaBerlakuHeadTruck)} />
-              <InfoRow label="Masa Berlaku Tangki" value={formatTanggal(kendaraan.masaBerlakuTangki)} />
+              <InfoRow label="Masa Berlaku Head Truck" value={formatTanggal(kendaraan.masaBerlakuHeadTruck)} danger={isExpired(kendaraan.masaBerlakuHeadTruck)} />
+              <InfoRow label="Masa Berlaku Tangki" value={formatTanggal(kendaraan.masaBerlakuTangki)} danger={isExpired(kendaraan.masaBerlakuTangki)} />
+            </div>
+          )}
+
+          {/* Peringatan & blokir kalau masa berlaku Head Truck/Tangki sudah lewat */}
+          {lookupStatus === "found" && (isExpired(kendaraan.masaBerlakuHeadTruck) || isExpired(kendaraan.masaBerlakuTangki)) && (
+            <div style={{ marginTop: 16, padding: "12px 14px", borderRadius: 10, background: theme.dangerLight, color: theme.danger, fontSize: 12, fontWeight: 700 }}>
+              ⛔ {isExpired(kendaraan.masaBerlakuHeadTruck) && isExpired(kendaraan.masaBerlakuTangki)
+                ? "Masa berlaku Head Truck dan Tangki kendaraan ini sudah kedaluwarsa."
+                : isExpired(kendaraan.masaBerlakuHeadTruck)
+                  ? "Masa berlaku Head Truck kendaraan ini sudah kedaluwarsa."
+                  : "Masa berlaku Tangki kendaraan ini sudah kedaluwarsa."}
+              {" "}Uji kedap tidak dapat dilanjutkan sampai diperbarui — hubungi admin untuk perpanjangan/registrasi ulang.
             </div>
           )}
 
@@ -844,7 +885,13 @@ const HSEFormScreen = ({ onBack, onNav }) => {
         </div>
 
         <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 430, padding: "12px 16px", background: theme.surface, borderTop: `1px solid ${theme.border}` }}>
-          <Btn onClick={handleLanjutKendaraan} variant="primary" disabled={lookupStatus !== "found"}>Lanjut →</Btn>
+          <Btn
+            onClick={handleLanjutKendaraan}
+            variant="primary"
+            disabled={lookupStatus !== "found" || isExpired(kendaraan.masaBerlakuHeadTruck) || isExpired(kendaraan.masaBerlakuTangki)}
+          >
+            Lanjut →
+          </Btn>
         </div>
       </div>
     );
