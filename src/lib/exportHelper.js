@@ -70,10 +70,13 @@ export const fetchExportData = async ({ kategori, fromISO, toISO }) => {
         .select("*")
         .in("inspeksi_id", ids);
       (fotoData || []).forEach((f) => {
-        (fotoMap[f.inspeksi_id] ??= []).push(f);
+        (fotoMap[f.inspeksi_id] ??= []).push({
+          url: f.url,
+          label: f.kategori === "gps" ? "GPS" : "CCTV",
+        });
       });
     }
-    result.gps = list.map((item) => ({ ...item, _foto: fotoMap[item.id] || [] }));
+    result.gps = list.map((item) => ({ ...item, _foto: fotoMap[item.id] || [], _pemeriksa: item.nama_pemeriksa || "-" }));
   }
 
   if (kategori.includes("hse")) {
@@ -87,17 +90,48 @@ export const fetchExportData = async ({ kategori, fromISO, toISO }) => {
     const list = data || [];
 
     const ids = list.map((i) => i.id);
-    const fotoMap = {};
+
+    // Foto per-checkpoint — ADA UNTUK SEMUA CHECKPOINT (lolos maupun tidak),
+    // ini yang sebelumnya terlewat sehingga kendaraan lolos uji kedap tidak ada fotonya.
+    const checkpointFotoMap = {};
+    const checkpointsByInspeksi = {};
+    if (ids.length > 0) {
+      const { data: checkpointData } = await supabase
+        .from("inspeksi_hse_checkpoint")
+        .select("*")
+        .in("inspeksi_hse_id", ids)
+        .order("menit", { ascending: true });
+      (checkpointData || []).forEach((cp) => {
+        (checkpointsByInspeksi[cp.inspeksi_hse_id] ??= []).push(cp);
+        if (cp.foto_url) {
+          (checkpointFotoMap[cp.inspeksi_hse_id] ??= []).push({
+            url: cp.foto_url,
+            label: `Menit ke-${cp.menit ?? "-"} — ${cp.status || "-"}`,
+          });
+        }
+      });
+    }
+
+    // Foto temuan tambahan — khusus checkpoint yang bermasalah
+    const temuanFotoMap = {};
     if (ids.length > 0) {
       const { data: fotoData } = await supabase
         .from("foto_inspeksi_hse")
         .select("*")
         .in("inspeksi_hse_id", ids);
       (fotoData || []).forEach((f) => {
-        (fotoMap[f.inspeksi_hse_id] ??= []).push(f);
+        (temuanFotoMap[f.inspeksi_hse_id] ??= []).push({
+          url: f.url,
+          label: f.keterangan ? `Temuan — ${f.keterangan}` : "Temuan",
+        });
       });
     }
-    result.hse = list.map((item) => ({ ...item, _foto: fotoMap[item.id] || [] }));
+
+    result.hse = list.map((item) => ({
+      ...item,
+      _foto: [...(checkpointFotoMap[item.id] || []), ...(temuanFotoMap[item.id] || [])],
+      _checkpoints: checkpointsByInspeksi[item.id] || [],
+    }));
   }
 
   if (kategori.includes("p1")) {
@@ -121,7 +155,26 @@ export const fetchExportData = async ({ kategori, fromISO, toISO }) => {
         (fotoMap[f.inspeksi_id] ??= []).push(f);
       });
     }
-    result.p1 = list.map((item) => ({ ...item, _foto: fotoMap[item.id] || [] }));
+    result.p1 = list.map((item) => {
+      const temuanById = Object.fromEntries((item.inspeksi_p1_temuan || []).map((t) => [t.id, t.judul]));
+      const foto = (fotoMap[item.id] || []).map((f) => ({
+        url: f.url,
+        label: temuanById[f.temuan_id] || "Foto Temuan",
+      }));
+      return { ...item, _foto: foto };
+    });
+  }
+
+  // ── Lengkapi nama pemeriksa untuk HSE & P1 (GPS sudah punya nama_pemeriksa langsung) ──
+  const userIds = [...new Set([...result.hse, ...result.p1].map((i) => i.user_id).filter(Boolean))];
+  if (userIds.length > 0) {
+    const { data: profiles } = await supabase
+      .from("profiles")
+      .select("id, nama")
+      .in("id", userIds);
+    const nameMap = Object.fromEntries((profiles || []).map((p) => [p.id, p.nama]));
+    result.hse = result.hse.map((i) => ({ ...i, _pemeriksa: nameMap[i.user_id] || "-" }));
+    result.p1  = result.p1.map((i) => ({ ...i, _pemeriksa: nameMap[i.user_id] || "-" }));
   }
 
   return result;

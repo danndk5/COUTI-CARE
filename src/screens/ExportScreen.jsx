@@ -8,7 +8,7 @@ import { useBreakpoint } from "../hooks/useBreakpoint";
 import { SIDEBAR_WIDTH } from "../styles/layout";
 import { getDateRangeFromPeriode, fetchExportData, computeTopKerusakan, computeRingkasan } from "../lib/exportHelper";
 import { generateExcel } from "../lib/exportExcel";
-import { generatePdf } from "../lib/exportPdf";
+import { generatePdfPerItem } from "../lib/exportPdf";
 
 // ── Opsi kategori data ────────────────────────────────────────────────────────
 const KATEGORI_OPTIONS = [
@@ -119,11 +119,8 @@ const ExportScreen = ({ onNav, onBack }) => {
       if (format === "excel") {
         generateExcel({ data: exportData, topKerusakan, ringkasan, periodeLabel, kategori });
       } else {
-        await generatePdf({
+        await generatePdfPerItem({
           data: exportData,
-          topKerusakan,
-          ringkasan,
-          periodeLabel,
           kategori,
           sertakanFoto,
           onProgress: (done, total, label) => setProgress({ done, total, label }),
@@ -252,7 +249,7 @@ const ExportScreen = ({ onNav, onBack }) => {
               {format === "excel"
                 ? "Foto tidak disertakan di Excel — hanya tersedia untuk PDF"
                 : sertakanFoto
-                  ? "Foto akan disisipkan di tiap temuan (proses lebih lama)"
+                  ? "Tiap laporan jadi 1 PDF dengan foto (proses lebih lama, hasil .zip)"
                   : "Hanya data teks & tabel, tanpa foto"}
             </div>
           </div>
@@ -288,7 +285,7 @@ const ExportScreen = ({ onNav, onBack }) => {
             onClick={() => setFormat("pdf")}
             icon="file-pdf" iconColor="#DC2626" iconBg="#FEE2E2"
             label="PDF"
-            sublabel="Laporan siap-presentasi, bisa sertakan foto"
+            sublabel="1 PDF per kendaraan (dibungkus .zip), bisa sertakan foto"
             isDesktop={isDesktop}
           />
         </div>
