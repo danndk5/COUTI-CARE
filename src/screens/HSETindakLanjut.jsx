@@ -116,37 +116,21 @@ const uploadFoto = async (file, kategori, pos) => {
 };
 
 // ── PhotoLightbox — preview foto full-screen sebelum dikirim ──────────────────
-// Tombol back HP menutup lightbox ini dulu (bukan langsung keluar ke halaman
+// Tombol back HP menutup lightbox ini (bukan langsung keluar ke halaman
 // sebelumnya) — lihat useBackableView di hooks/useBackableView.js.
 const PhotoLightbox = ({ url, onClose }) => {
   useBackableView(!!url, onClose);
-
   if (!url) return null;
   return (
     <div
-      onClick={() => goBack(onClose)}
       style={{
         position: "fixed", inset: 0, background: "rgba(0,0,0,0.92)", zIndex: 9999,
         display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
       }}
     >
-      <div
-        onClick={() => goBack(onClose)}
-        style={{
-          position: "absolute", top: 44, right: 20, color: "#fff", fontSize: 26,
-          fontWeight: 700, cursor: "pointer", width: 36, height: 36, borderRadius: 18,
-          background: "rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center",
-        }}
-      >
-        ✕
-      </div>
-      <div style={{ position: "absolute", top: 46, left: 20, color: "#fff", fontSize: 12, opacity: 0.8 }}>
-        Ketuk di mana saja untuk menutup
-      </div>
       <img
         src={url}
         alt="Preview foto"
-        onClick={(e) => e.stopPropagation()}
         style={{ maxWidth: "100%", maxHeight: "100%", borderRadius: 10, objectFit: "contain" }}
       />
     </div>
