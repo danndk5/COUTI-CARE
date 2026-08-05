@@ -89,6 +89,41 @@ const isExpired = (val) => {
   return d < today;
 };
 
+// ── Umur MT & sisa waktu masa berlaku — dihitung ULANG setiap render ────────
+// supaya otomatis update setiap hari begitu halaman dibuka, tidak disimpan statis.
+// Logika sama persis dengan AdminKendaraanScreen.jsx supaya angka yang tampil
+// konsisten di semua tempat.
+const diffYMD = (start, end) => {
+  let years = end.getFullYear() - start.getFullYear();
+  let months = end.getMonth() - start.getMonth();
+  let days = end.getDate() - start.getDate();
+  if (days < 0) {
+    months -= 1;
+    const prevMonthLastDay = new Date(end.getFullYear(), end.getMonth(), 0).getDate();
+    days += prevMonthLastDay;
+  }
+  if (months < 0) { years -= 1; months += 12; }
+  return { years, months, days };
+};
+
+const calcUmurMT = (tanggalStnk) => {
+  if (!tanggalStnk) return null;
+  const start = new Date(tanggalStnk);
+  if (isNaN(start.getTime())) return null;
+  const { years, months, days } = diffYMD(start, new Date());
+  return `${years} Tahun, ${months} Bulan, ${days} Hari`;
+};
+
+// null kalau tanggal sudah lewat (dianggap kadaluarsa, ditangani terpisah oleh isExpired)
+const calcSisaWaktu = (tanggalTarget) => {
+  if (!tanggalTarget) return null;
+  const target = new Date(tanggalTarget);
+  const now = new Date();
+  if (isNaN(target.getTime()) || target <= now) return null;
+  const { years, months, days } = diffYMD(now, target);
+  return `${years} Tahun, ${months} Bulan, ${days} Hari`;
+};
+
 // ── applyOverlay (shared) ─────────────────────────────────────────────────────
 const applyOverlay = async (file, pos) => {
   let serverTime = new Date();
@@ -158,8 +193,6 @@ const uploadFoto = async (file, kategori, pos) => {
 };
 
 // ── PhotoLightbox — preview foto full-screen sebelum dikirim ──────────────────
-// Tombol back HP menutup lightbox ini (bukan langsung keluar ke Beranda) —
-// lihat useBackableView di hooks/useBackableView.js.
 const PhotoLightbox = ({ url, onClose }) => {
   useBackableView(!!url, onClose);
   if (!url) return null;
@@ -414,7 +447,7 @@ const HSEFormScreen = ({ onBack, onNav }) => {
   // Data kendaraan — hanya "polisi" yang diketik user, sisanya read-only dari database
   const [kendaraan, setKendaraan] = useState({
     polisi: "", kapasitas: "", kompartemen: "", transportir: "",
-    masaBerlakuHeadTruck: "", masaBerlakuTangki: "",
+    masaBerlakuHeadTruck: "", masaBerlakuTangki: "", tanggalStnk: "",
   });
 
   // Kategori MT
@@ -471,7 +504,7 @@ const HSEFormScreen = ({ onBack, onNav }) => {
       } else {
         setStep(draft.step || "sop");
         setSopPage(draft.sopPage || 0);
-        setKendaraan(draft.kendaraan || { polisi: "", kapasitas: "", kompartemen: "", transportir: "", masaBerlakuHeadTruck: "", masaBerlakuTangki: "" });
+        setKendaraan(draft.kendaraan || { polisi: "", kapasitas: "", kompartemen: "", transportir: "", masaBerlakuHeadTruck: "", masaBerlakuTangki: "", tanggalStnk: "" });
         setKategoriMT(draft.kategoriMT || "");
         setLookupStatus(draft.lookupStatus || "idle");
         setCheckpoints(draft.checkpoints && draft.checkpoints.length ? draft.checkpoints : initCheckpoints());
@@ -498,7 +531,7 @@ const HSEFormScreen = ({ onBack, onNav }) => {
     draftCreatedAtRef.current = null;
     setStep("sop");
     setSopPage(0);
-    setKendaraan({ polisi: "", kapasitas: "", kompartemen: "", transportir: "", masaBerlakuHeadTruck: "", masaBerlakuTangki: "" });
+    setKendaraan({ polisi: "", kapasitas: "", kompartemen: "", transportir: "", masaBerlakuHeadTruck: "", masaBerlakuTangki: "", tanggalStnk: "" });
     setKategoriMT("");
     setLookupStatus("idle");
     setCheckpoints(initCheckpoints());
@@ -547,7 +580,7 @@ const HSEFormScreen = ({ onBack, onNav }) => {
     const upper = val.toUpperCase();
     setKendaraan((p) => ({
       ...p, polisi: upper, kapasitas: "", kompartemen: "", transportir: "",
-      masaBerlakuHeadTruck: "", masaBerlakuTangki: "",
+      masaBerlakuHeadTruck: "", masaBerlakuTangki: "", tanggalStnk: "",
     }));
     setLookupStatus("idle");
     setRiwayatSebelumnya([]);
@@ -559,7 +592,7 @@ const HSEFormScreen = ({ onBack, onNav }) => {
       try {
         const { data } = await supabase
           .from("kendaraan")
-          .select("transportir, kapasitas_mt, jumlah_kompartemen, kategori_mt, masa_berlaku_head_truck, masa_berlaku_tangki")
+          .select("transportir, kapasitas_mt, jumlah_kompartemen, kategori_mt, masa_berlaku_head_truck, masa_berlaku_tangki, tanggal_stnk")
           .eq("nomor_polisi", upper.trim()).maybeSingle();
         if (data) {
           setKendaraan((p) => ({
@@ -569,6 +602,7 @@ const HSEFormScreen = ({ onBack, onNav }) => {
             kompartemen:           data.jumlah_kompartemen?.toString() || "",
             masaBerlakuHeadTruck:  data.masa_berlaku_head_truck || "",
             masaBerlakuTangki:     data.masa_berlaku_tangki     || "",
+            tanggalStnk:           data.tanggal_stnk            || "",
           }));
           if (data.kategori_mt) setKategoriMT(data.kategori_mt);
           setLookupStatus("found");
@@ -823,8 +857,31 @@ const HSEFormScreen = ({ onBack, onNav }) => {
               <InfoRow label="Kapasitas MT" value={kendaraan.kapasitas} />
               <InfoRow label="Jumlah Kompartemen" value={kendaraan.kompartemen} />
               <InfoRow label="Transportir" value={kendaraan.transportir} />
-              <InfoRow label="Masa Berlaku Head Truck" value={formatTanggal(kendaraan.masaBerlakuHeadTruck)} danger={isExpired(kendaraan.masaBerlakuHeadTruck)} />
-              <InfoRow label="Masa Berlaku Tangki" value={formatTanggal(kendaraan.masaBerlakuTangki)} danger={isExpired(kendaraan.masaBerlakuTangki)} />
+              {calcUmurMT(kendaraan.tanggalStnk) && (
+                <InfoRow label="Umur MT" value={`${calcUmurMT(kendaraan.tanggalStnk)} (STNK: ${formatTanggal(kendaraan.tanggalStnk)})`} />
+              )}
+              <InfoRow
+                label="Masa Berlaku Head Truck"
+                value={
+                  isExpired(kendaraan.masaBerlakuHeadTruck)
+                    ? `${formatTanggal(kendaraan.masaBerlakuHeadTruck)} (Kadaluarsa)`
+                    : calcSisaWaktu(kendaraan.masaBerlakuHeadTruck)
+                      ? `${formatTanggal(kendaraan.masaBerlakuHeadTruck)} (${calcSisaWaktu(kendaraan.masaBerlakuHeadTruck)})`
+                      : formatTanggal(kendaraan.masaBerlakuHeadTruck)
+                }
+                danger={isExpired(kendaraan.masaBerlakuHeadTruck)}
+              />
+              <InfoRow
+                label="Masa Berlaku Tangki"
+                value={
+                  isExpired(kendaraan.masaBerlakuTangki)
+                    ? `${formatTanggal(kendaraan.masaBerlakuTangki)} (Kadaluarsa)`
+                    : calcSisaWaktu(kendaraan.masaBerlakuTangki)
+                      ? `${formatTanggal(kendaraan.masaBerlakuTangki)} (${calcSisaWaktu(kendaraan.masaBerlakuTangki)})`
+                      : formatTanggal(kendaraan.masaBerlakuTangki)
+                }
+                danger={isExpired(kendaraan.masaBerlakuTangki)}
+              />
             </div>
           )}
 
@@ -954,6 +1011,9 @@ const HSEFormScreen = ({ onBack, onNav }) => {
             <InfoRow label="Jumlah Kompartemen" value={kendaraan.kompartemen} />
             <InfoRow label="Transportir" value={kendaraan.transportir} />
             <InfoRow label="Kategori MT" value={kategoriMT === "merah_putih" ? "MT Merah Putih" : "MT Industri"} />
+            {calcUmurMT(kendaraan.tanggalStnk) && (
+              <InfoRow label="Umur MT" value={calcUmurMT(kendaraan.tanggalStnk)} />
+            )}
           </div>
 
           {/* Ringkasan checkpoint */}

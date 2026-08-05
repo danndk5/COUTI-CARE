@@ -6,7 +6,7 @@ import SectionLabel from "../components/SectionLabel";
 import theme from "../styles/theme";
 import { supabase } from "../lib/supabase";
 import { useCameraGPS } from "../hooks/useCameraGPS";
-import { useBackableView, goBack } from "../hooks/useBackableView";
+import { useBackableView } from "../hooks/useBackableView";
 
 // ── Draft persistence (agar data tidak hilang kalau app ke-close / tombol home) ──
 const DRAFT_KEY = "draft_form_p1";
@@ -43,6 +43,16 @@ const formatServerTime = (date) => {
 const formatTanggal = (dateStr) => {
   if (!dateStr) return "-";
   return new Date(dateStr).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" });
+};
+// Cek apakah tanggal masa berlaku (Head Truck / Tangki) sudah lewat hari ini.
+// Kalau kosong/tidak valid, dianggap TIDAK kedaluwarsa (biar tidak memblokir kalau datanya memang belum diisi admin).
+const isExpired = (val) => {
+  if (!val) return false;
+  const d = new Date(val);
+  if (isNaN(d.getTime())) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return d < today;
 };
 
 const applyOverlay = async (file, pos) => {
@@ -111,40 +121,27 @@ const uploadFoto = async (file, pos) => {
 const InfoRow = ({ label, value, highlight }) => (
   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: `1px solid ${theme.border}` }}>
     <div style={{ fontSize: 12, color: theme.textMuted }}>{label}</div>
-    <div style={{ fontSize: 13, fontWeight: 600, color: highlight ? theme.danger : theme.text, textAlign: "right", maxWidth: "60%" }}>{value || "-"}</div>
+    <div style={{ fontSize: 13, fontWeight: 600, color: highlight ? theme.danger : theme.text, textAlign: "right", maxWidth: "60%" }}>
+      {value || "-"}{highlight ? " ⚠️" : ""}
+    </div>
   </div>
 );
 
-// ── PhotoLightbox — preview full-screen. Tombol back HP menutup lightbox ini
-// dulu (bukan langsung keluar dari form) — sama seperti pola HSEFormScreen. ──
+// ── PhotoLightbox — preview full-screen. Satu-satunya cara menutup adalah
+// tombol back HP (useBackableView) — konsisten dengan HSEFormScreen. ────────
 const PhotoLightbox = ({ url, onClose }) => {
   useBackableView(!!url, onClose);
   if (!url) return null;
   return (
     <div
-      onClick={() => goBack(onClose)}
       style={{
         position: "fixed", inset: 0, background: "rgba(0,0,0,0.92)", zIndex: 9999,
         display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
       }}
     >
-      <div
-        onClick={() => goBack(onClose)}
-        style={{
-          position: "absolute", top: 44, right: 20, color: "#fff", fontSize: 26,
-          fontWeight: 700, cursor: "pointer", width: 36, height: 36, borderRadius: 18,
-          background: "rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center",
-        }}
-      >
-        ✕
-      </div>
-      <div style={{ position: "absolute", top: 46, left: 20, color: "#fff", fontSize: 12, opacity: 0.8 }}>
-        Ketuk di mana saja untuk menutup
-      </div>
       <img
         src={url}
         alt="Preview foto"
-        onClick={(e) => e.stopPropagation()}
         style={{ maxWidth: "100%", maxHeight: "100%", borderRadius: 10, objectFit: "contain" }}
       />
     </div>
@@ -289,7 +286,7 @@ const TemuanItem = ({ idx, item, onChange, onRemove, showRemove, onPreview, requ
 
 // ── P1FormScreen ──────────────────────────────────────────────────────────────
 const P1FormScreen = ({ onBack, onNav }) => {
-  const [step,        setStep]        = useState(1); // 1=Kendaraan, 2=Temuan
+  const [step,        setStep]        = useState(1); // 1=Kendaraan, 2=Temuan, 3=Ringkasan
   const [currentUser, setCurrentUser] = useState(null);
   const [submitting,  setSubmitting]  = useState(false);
   const [previewUrl,  setPreviewUrl]  = useState(null);
@@ -305,6 +302,9 @@ const P1FormScreen = ({ onBack, onNav }) => {
   const [kendaraanData, setKendaraanData] = useState(null);
   const [lookupStatus,  setLookupStatus]  = useState("idle");
   const lookupTimer = useRef(null);
+
+  // Riwayat pengecekan P1 sebelumnya untuk kendaraan yang sedang dicari (3 terakhir)
+  const [riwayatSebelumnya, setRiwayatSebelumnya] = useState([]);
 
   const [temuan, setTemuan] = useState([emptyTemuan()]);
 
@@ -346,6 +346,7 @@ const P1FormScreen = ({ onBack, onNav }) => {
         setKendaraanData(draft.kendaraanData || null);
         setLookupStatus(draft.kendaraanData ? "found" : "idle");
         setTemuan(draft.temuan && draft.temuan.length ? draft.temuan : [emptyTemuan()]);
+        setRiwayatSebelumnya(draft.riwayatSebelumnya || []);
         draftCreatedAtRef.current = draft.createdAt || Date.now();
         setShowRestoreBanner(true);
       }
@@ -360,8 +361,8 @@ const P1FormScreen = ({ onBack, onNav }) => {
       step > 1 || nopol.trim() || temuan.some((t) => t.judul.trim() || t.keterangan.trim() || t.foto);
     if (!hasProgress) { clearDraft(); draftCreatedAtRef.current = null; return; }
     if (!draftCreatedAtRef.current) draftCreatedAtRef.current = Date.now();
-    saveDraft({ createdAt: draftCreatedAtRef.current, step, nopol, kendaraanData, temuan });
-  }, [ready, step, nopol, kendaraanData, temuan]);
+    saveDraft({ createdAt: draftCreatedAtRef.current, step, nopol, kendaraanData, temuan, riwayatSebelumnya });
+  }, [ready, step, nopol, kendaraanData, temuan, riwayatSebelumnya]);
 
   const resetSemua = () => {
     clearDraft();
@@ -371,6 +372,7 @@ const P1FormScreen = ({ onBack, onNav }) => {
     setKendaraanData(null);
     setLookupStatus("idle");
     setTemuan([emptyTemuan()]);
+    setRiwayatSebelumnya([]);
     setShowRestoreBanner(false);
   };
 
@@ -412,6 +414,7 @@ const P1FormScreen = ({ onBack, onNav }) => {
     setNopol(val.toUpperCase());
     setKendaraanData(null);
     setLookupStatus("idle");
+    setRiwayatSebelumnya([]);
     if (lookupTimer.current) clearTimeout(lookupTimer.current);
     if (!val.trim()) return;
     lookupTimer.current = setTimeout(async () => {
@@ -423,6 +426,29 @@ const P1FormScreen = ({ onBack, onNav }) => {
         if (data) {
           setKendaraanData(data);
           setLookupStatus("found");
+
+          // Riwayat pengecekan P1 sebelumnya — 3 terakhir untuk kendaraan ini,
+          // dilengkapi jumlah temuan masing-masing (bukan status lulus/tidak lulus,
+          // karena P1 adalah cek random, bukan uji kedap pass/fail).
+          const { data: riwayatData } = await supabase
+            .from("inspeksi_p1")
+            .select("id, created_at")
+            .eq("nomor_polisi", val.trim().toUpperCase())
+            .order("created_at", { ascending: false })
+            .limit(3);
+
+          if (riwayatData && riwayatData.length > 0) {
+            const withCounts = await Promise.all(riwayatData.map(async (r) => {
+              const { count } = await supabase
+                .from("inspeksi_p1_temuan")
+                .select("id", { count: "exact", head: true })
+                .eq("inspeksi_p1_id", r.id);
+              return { ...r, temuanCount: count || 0 };
+            }));
+            setRiwayatSebelumnya(withCounts);
+          } else {
+            setRiwayatSebelumnya([]);
+          }
         } else {
           setLookupStatus("notfound");
         }
@@ -448,6 +474,10 @@ const P1FormScreen = ({ onBack, onNav }) => {
       alert("Nomor Polisi tidak ditemukan di database. Hubungi admin Depot untuk mendaftarkan kendaraan ini.");
       return;
     }
+    if (isExpired(kendaraanData.masa_berlaku_head_truck) || isExpired(kendaraanData.masa_berlaku_tangki)) {
+      alert("Masa berlaku Head Truck/Tangki kendaraan ini sudah kedaluwarsa. Pengecekan tidak dapat dilanjutkan — hubungi admin untuk perpanjangan/registrasi ulang.");
+      return;
+    }
     setStep(2);
   };
 
@@ -465,9 +495,23 @@ const P1FormScreen = ({ onBack, onNav }) => {
     return valid;
   };
 
-  const handleSubmit = async () => {
+  // Tombol di step Temuan sekarang menuju layar RINGKASAN dulu, belum langsung kirim
+  const handleTinjau = () => {
     if (!validateTemuan()) return;
+    setStep(3);
+  };
+
+  // Submit sesungguhnya — dipanggil dari layar Ringkasan.
+  // Catatan atomicity: tidak pakai transaksi database asli (butuh RPC baru di sisi Supabase).
+  // Sebagai gantinya, kalau ada temuan yang gagal disimpan SETELAH baris inspeksi_p1 dan
+  // sebagian temuan lain terlanjur terbuat, semuanya dihapus lagi (rollback manual) supaya
+  // tidak ada record "setengah jadi" yang nyangkut. submittedRef juga baru diset true setelah
+  // SEMUA insert berhasil, supaya cleanup foto orphan (efek unmount) tetap jalan kalau gagal.
+  const handleSubmit = async () => {
+    if (!validateTemuan()) { setStep(2); return; }
     setSubmitting(true);
+    let inspId = null;
+    const createdTemuanIds = [];
     try {
       const { data: insp, error: inspErr } = await supabase.from("inspeksi_p1").insert([{
         user_id: currentUser,
@@ -481,35 +525,52 @@ const P1FormScreen = ({ onBack, onNav }) => {
         status: "baru",
       }]).select().single();
       if (inspErr) throw inspErr;
-
-      submittedRef.current = true;
+      inspId = insp.id;
 
       for (const t of temuan) {
         const { data: tv, error: tvErr } = await supabase.from("inspeksi_p1_temuan").insert([{
-          inspeksi_p1_id: insp.id,
+          inspeksi_p1_id: inspId,
           judul: t.judul,
           keterangan: t.keterangan,
         }]).select().single();
         if (tvErr) throw tvErr;
+        createdTemuanIds.push(tv.id);
+
         if (t.foto?.url) {
-          await supabase.from("foto_inspeksi_p1").insert([{
+          const { error: fotoErr } = await supabase.from("foto_inspeksi_p1").insert([{
             temuan_id: tv.id,
             url: t.foto.url,
           }]);
+          if (fotoErr) throw fotoErr;
         }
       }
 
+      // Semua insert berhasil — baru sekarang dianggap benar-benar tersimpan.
+      submittedRef.current = true;
       clearDraft();
+
       alert("✓ Laporan cek random berhasil dikirim!");
       onNav("dashboard");
     } catch (err) {
-      alert("Gagal menyimpan: " + err.message);
+      // Rollback manual: hapus dulu temuan (+foto turunannya) yang sempat
+      // terbuat, baru hapus baris inspeksi_p1-nya, supaya tidak ada record
+      // setengah jadi yang nyangkut di database.
+      if (createdTemuanIds.length > 0) {
+        await supabase.from("foto_inspeksi_p1").delete().in("temuan_id", createdTemuanIds).catch(() => {});
+        await supabase.from("inspeksi_p1_temuan").delete().in("id", createdTemuanIds).catch(() => {});
+      }
+      if (inspId) {
+        await supabase.from("inspeksi_p1").delete().eq("id", inspId).catch(() => {});
+      }
+      alert("Gagal menyimpan: " + err.message + "\n\nData belum tersimpan. Silakan coba kirim ulang.");
     } finally {
       setSubmitting(false);
     }
   };
 
-  const STEPS = ["Kendaraan", "Temuan"];
+  const STEPS = ["Kendaraan", "Temuan", "Ringkasan"];
+  const masaBerlakuBermasalah = kendaraanData
+    && (isExpired(kendaraanData.masa_berlaku_head_truck) || isExpired(kendaraanData.masa_berlaku_tangki));
 
   return (
     <div style={{ minHeight: "100vh", background: theme.bg, display: "flex", flexDirection: "column" }}>
@@ -563,11 +624,47 @@ const P1FormScreen = ({ onBack, onNav }) => {
                   <InfoRow label="Kapasitas MT" value={kendaraanData.kapasitas_mt} />
                   <InfoRow label="Jumlah Kompartemen" value={kendaraanData.jumlah_kompartemen ? `${kendaraanData.jumlah_kompartemen} kompartemen` : null} />
                   <InfoRow label="Kategori MT" value={kendaraanData.kategori_mt === "merah_putih" ? "MT Merah Putih" : kendaraanData.kategori_mt === "industri" ? "MT Industri" : kendaraanData.kategori_mt} />
-                  <InfoRow label="Masa Berlaku Head Truck" value={formatTanggal(kendaraanData.masa_berlaku_head_truck)} />
-                  <InfoRow label="Masa Berlaku Tangki" value={formatTanggal(kendaraanData.masa_berlaku_tangki)} />
+                  <InfoRow label="Masa Berlaku Head Truck" value={formatTanggal(kendaraanData.masa_berlaku_head_truck)} highlight={isExpired(kendaraanData.masa_berlaku_head_truck)} />
+                  <InfoRow label="Masa Berlaku Tangki" value={formatTanggal(kendaraanData.masa_berlaku_tangki)} highlight={isExpired(kendaraanData.masa_berlaku_tangki)} />
                 </div>
               )}
             </div>
+
+            {/* Peringatan & blokir kalau masa berlaku Head Truck/Tangki sudah lewat */}
+            {lookupStatus === "found" && masaBerlakuBermasalah && (
+              <div style={{ marginTop: 12, padding: "12px 14px", borderRadius: 10, background: theme.dangerLight, color: theme.danger, fontSize: 12, fontWeight: 700 }}>
+                ⛔ {isExpired(kendaraanData.masa_berlaku_head_truck) && isExpired(kendaraanData.masa_berlaku_tangki)
+                  ? "Masa berlaku Head Truck dan Tangki kendaraan ini sudah kedaluwarsa."
+                  : isExpired(kendaraanData.masa_berlaku_head_truck)
+                    ? "Masa berlaku Head Truck kendaraan ini sudah kedaluwarsa."
+                    : "Masa berlaku Tangki kendaraan ini sudah kedaluwarsa."}
+                {" "}Pengecekan tidak dapat dilanjutkan sampai diperbarui — hubungi admin untuk perpanjangan/registrasi ulang.
+              </div>
+            )}
+
+            {/* Riwayat pengecekan P1 sebelumnya — konteks sebelum cek ulang */}
+            {lookupStatus === "found" && riwayatSebelumnya.length > 0 && (
+              <div style={{ marginTop: 16, background: theme.surface, borderRadius: 14, padding: 16, border: `1px solid ${theme.border}` }}>
+                <SectionLabel>Riwayat Pengecekan Sebelumnya</SectionLabel>
+                {riwayatSebelumnya.map((r, i) => (
+                  <div key={r.id} style={{
+                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                    padding: "8px 0", borderBottom: i < riwayatSebelumnya.length - 1 ? `1px solid ${theme.border}` : "none",
+                  }}>
+                    <div style={{ fontSize: 12, color: theme.textMuted }}>
+                      {new Date(r.created_at).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}
+                    </div>
+                    <div style={{
+                      fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20,
+                      background: r.temuanCount > 0 ? theme.dangerLight : theme.successLight,
+                      color: r.temuanCount > 0 ? theme.danger : theme.success,
+                    }}>
+                      {r.temuanCount > 0 ? `${r.temuanCount} temuan` : "Tidak ada temuan"}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </>
         )}
 
@@ -602,6 +699,44 @@ const P1FormScreen = ({ onBack, onNav }) => {
             </div>
           </>
         )}
+
+        {step === 3 && (
+          <>
+            <SectionLabel>Ringkasan Sebelum Kirim</SectionLabel>
+            <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 16 }}>
+              Periksa kembali semua data sebelum diunggah. Data tidak dapat diedit setelah dikirim.
+            </div>
+
+            <div style={{ marginBottom: 16, background: theme.surface, borderRadius: 14, padding: 16, border: `1px solid ${theme.border}` }}>
+              <SectionLabel>Data Kendaraan</SectionLabel>
+              <InfoRow label="Nomor Polisi" value={nopol} />
+              <InfoRow label="Transportir" value={kendaraanData?.transportir} />
+              <InfoRow label="Kapasitas MT" value={kendaraanData?.kapasitas_mt} />
+              <InfoRow label="Jumlah Kompartemen" value={kendaraanData?.jumlah_kompartemen} />
+              <InfoRow label="Kategori MT" value={kendaraanData?.kategori_mt === "merah_putih" ? "MT Merah Putih" : kendaraanData?.kategori_mt === "industri" ? "MT Industri" : kendaraanData?.kategori_mt} />
+            </div>
+
+            <div style={{ marginBottom: 16, background: theme.surface, borderRadius: 14, padding: 16, border: `1px solid ${theme.border}` }}>
+              <SectionLabel>Temuan ({temuan.length})</SectionLabel>
+              {temuan.map((t, i) => (
+                <div key={i} style={{ display: "flex", gap: 10, padding: "10px 0", borderBottom: i < temuan.length - 1 ? `1px solid ${theme.border}` : "none" }}>
+                  {t.foto?.url && (
+                    <img
+                      src={t.foto.url}
+                      alt="temuan"
+                      onClick={() => setPreviewUrl(t.foto.url)}
+                      style={{ width: 48, height: 48, borderRadius: 8, objectFit: "cover", cursor: "pointer", flexShrink: 0 }}
+                    />
+                  )}
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: theme.text }}>{t.judul}</div>
+                    <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>{t.keterangan}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </div>
 
       {/* Bottom Action */}
@@ -611,10 +746,19 @@ const P1FormScreen = ({ onBack, onNav }) => {
             ← Kembali
           </Btn>
         )}
-        {step === 1 && <Btn onClick={handleNextStep1} variant="primary" disabled={submitting || lookupStatus === "loading"}>Lanjut →</Btn>}
+        {step === 1 && (
+          <Btn onClick={handleNextStep1} variant="primary" disabled={submitting || lookupStatus === "loading" || masaBerlakuBermasalah}>
+            Lanjut →
+          </Btn>
+        )}
         {step === 2 && (
+          <Btn onClick={handleTinjau} variant="primary" icon="check" disabled={submitting}>
+            Tinjau & Kirim →
+          </Btn>
+        )}
+        {step === 3 && (
           <Btn onClick={handleSubmit} variant="primary" icon="check" disabled={submitting}>
-            {submitting ? "Menyimpan..." : "Simpan & Kirim"}
+            {submitting ? "Mengirim..." : "✅ Kirim Sekarang"}
           </Btn>
         )}
       </div>
