@@ -113,39 +113,70 @@ const buildSingleItemPdf = async ({ kat, item, sertakanFoto }) => {
   }
 
   // ── Foto dokumentasi ──
+  // Layout: 2 foto per baris, ukuran lebih besar untuk kejelasan detail audit,
+  // rasio asli foto dijaga (tidak dipaksa kotak/gepeng) dengan letterbox di kotak tetap.
   const fotoList = sertakanFoto ? (item._foto || []) : [];
   if (fotoList.length > 0) {
     if (y + 20 > bottomLimit) { doc.addPage(); y = margin; }
     doc.setFontSize(11); doc.setFont(undefined, "bold");
-    doc.text(`Foto Dokumentasi (${fotoList.length}):`, margin, y); y += 18;
+    doc.text(`Foto Dokumentasi (${fotoList.length}):`, margin, y); y += 20;
 
-    const imgSize = 115;
-    const gap = 12;
+    const boxW = 230;   // lebar kotak foto
+    const boxH = 200;   // tinggi maksimal kotak foto
+    const gapX = 25;
+    const gapY = 26;
+    const captionH = 22; // ruang untuk keterangan di bawah foto
     let x = margin;
+    let col = 0;
 
     for (const f of fotoList) {
-      if (x + imgSize > pageWidth - margin) { x = margin; y += imgSize + 22; }
-      if (y + imgSize + 18 > bottomLimit) { doc.addPage(); y = margin; x = margin; }
+      if (y + boxH + captionH > bottomLimit) { doc.addPage(); y = margin; x = margin; col = 0; }
 
       const base64 = await urlToBase64(f.url);
+      let dW = boxW, dH = boxW * 0.75; // fallback 4:3 kalau dimensi asli gagal dibaca
+
       if (base64) {
+        const dims = await new Promise((resolve) => {
+          const img = new Image();
+          img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight });
+          img.onerror = () => resolve(null);
+          img.src = base64;
+        });
+        if (dims && dims.w > 0 && dims.h > 0) {
+          dW = boxW;
+          dH = boxW * (dims.h / dims.w);
+          if (dH > boxH) { dH = boxH; dW = boxH * (dims.w / dims.h); }
+        }
+        const offsetX = (boxW - dW) / 2;
+        const offsetY = (boxH - dH) / 2;
         const fmt = base64.includes("image/png") ? "PNG" : "JPEG";
-        try { doc.addImage(base64, fmt, x, y, imgSize, imgSize); }
-        catch { /* lewati foto yang gagal diproses */ }
+        doc.setDrawColor(230);
+        doc.rect(x, y, boxW, boxH); // outline kotak — konsisten walau foto lebih kecil dari kotak
+        try { doc.addImage(base64, fmt, x + offsetX, y + offsetY, dW, dH); }
+        catch { /* lewati foto yang gagal diproses, kotak outline tetap tampil */ }
       } else {
         doc.setDrawColor(220);
-        doc.rect(x, y, imgSize, imgSize);
-        doc.setFontSize(7); doc.setTextColor(150);
-        doc.text("Gagal dimuat", x + 8, y + imgSize / 2);
+        doc.rect(x, y, boxW, boxH);
+        doc.setFontSize(8); doc.setTextColor(150);
+        doc.text("Foto gagal dimuat", x + boxW / 2 - 30, y + boxH / 2);
         doc.setTextColor(0);
       }
+
       if (f.label) {
-        doc.setFontSize(7.5); doc.setTextColor(100);
-        const capLines = doc.splitTextToSize(f.label, imgSize);
-        doc.text(capLines, x, y + imgSize + 11);
+        doc.setFontSize(8); doc.setTextColor(100);
+        const capLines = doc.splitTextToSize(f.label, boxW);
+        doc.text(capLines, x, y + boxH + 13);
         doc.setTextColor(0);
       }
-      x += imgSize + gap;
+
+      col += 1;
+      if (col >= 2) {
+        col = 0;
+        x = margin;
+        y += boxH + captionH + gapY;
+      } else {
+        x += boxW + gapX;
+      }
     }
   } else if (sertakanFoto) {
     doc.setFontSize(9); doc.setTextColor(140);
