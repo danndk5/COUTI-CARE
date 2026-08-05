@@ -6,7 +6,7 @@ import SectionLabel from "../components/SectionLabel";
 import theme from "../styles/theme";
 import { supabase } from "../lib/supabase";
 import { useCameraGPS } from "../hooks/useCameraGPS";
-import { useBackableView, goBack } from "../hooks/useBackableView";
+import { useBackableView } from "../hooks/useBackableView";
 import sop1 from "../assets/acuan/01.png";
 import sop2 from "../assets/acuan/02.png";
 import sop3 from "../assets/acuan/03.png";
@@ -162,33 +162,17 @@ const uploadFoto = async (file, kategori, pos) => {
 // lihat useBackableView di hooks/useBackableView.js.
 const PhotoLightbox = ({ url, onClose }) => {
   useBackableView(!!url, onClose);
-
   if (!url) return null;
   return (
     <div
-      onClick={() => goBack(onClose)}
       style={{
         position: "fixed", inset: 0, background: "rgba(0,0,0,0.92)", zIndex: 9999,
         display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
       }}
     >
-      <div
-        onClick={() => goBack(onClose)}
-        style={{
-          position: "absolute", top: 44, right: 20, color: "#fff", fontSize: 26,
-          fontWeight: 700, cursor: "pointer", width: 36, height: 36, borderRadius: 18,
-          background: "rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center",
-        }}
-      >
-        ✕
-      </div>
-      <div style={{ position: "absolute", top: 46, left: 20, color: "#fff", fontSize: 12, opacity: 0.8 }}>
-        Ketuk di mana saja untuk menutup
-      </div>
       <img
         src={url}
         alt="Preview foto"
-        onClick={(e) => e.stopPropagation()}
         style={{ maxWidth: "100%", maxHeight: "100%", borderRadius: 10, objectFit: "contain" }}
       />
     </div>
