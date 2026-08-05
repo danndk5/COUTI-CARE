@@ -10,7 +10,6 @@ const KATEGORI_TITLE = {
 };
 
 // Convert URL foto (Supabase Storage, public) jadi base64 supaya bisa ditempel ke PDF.
-// Kalau gagal fetch (network/CORS), return null — foto itu dilewati, tidak menghentikan proses.
 const urlToBase64 = async (url) => {
   try {
     const res = await fetch(url);
@@ -25,6 +24,14 @@ const urlToBase64 = async (url) => {
     return null;
   }
 };
+
+// Ambil dimensi asli foto (supaya bisa ditempatkan tanpa distorsi/gepeng)
+const getImageDims = (base64) => new Promise((resolve) => {
+  const img = new Image();
+  img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight });
+  img.onerror = () => resolve(null);
+  img.src = base64;
+});
 
 const statusLabel = (kat, item) => {
   if (kat === "gps") return isGpsAbnormal(item) ? "Abnormal — Perlu Tindak Lanjut" : "Normal";
@@ -42,21 +49,54 @@ const isBermasalah = (kat, item) => {
 
 const sanitizeFilename = (s) => (s || "unknown").toString().replace(/[^a-zA-Z0-9]+/g, "_");
 
-// ── Bangun 1 dokumen PDF lengkap untuk 1 laporan (1 kendaraan, 1 pemeriksaan) ───
-const buildSingleItemPdf = async ({ kat, item, sertakanFoto }) => {
-  const doc = new jsPDF({ unit: "pt", format: "a4" });
-  const pageWidth  = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
-  const margin = 40;
-  const bottomLimit = pageHeight - 50;
-  let y = margin;
+// ── Kop surat + judul, dipanggil di setiap halaman baru ─────────────────────────
+// NOTE: logo masih placeholder kotak kosong. Kalau nanti ada file logo resmi
+// Pertamina, tinggal ganti bagian doc.rect(...) di bawah dengan doc.addImage(...).
+const drawKopSurat = (doc, pageWidth, margin, judul) => {
+  let ky = margin;
+  const logoSize = 52;
 
-  // ── Header ──
-  doc.setFontSize(12); doc.setFont(undefined, "normal"); doc.setTextColor(120);
-  doc.text(`Laporan ${KATEGORI_TITLE[kat]}`, margin, y); y += 20;
+  doc.setDrawColor(0);
+  doc.setLineWidth(1);
+  doc.rect(margin, ky, logoSize, logoSize);
+  doc.setFontSize(7); doc.setTextColor(160);
+  doc.text("LOGO", margin + logoSize / 2 - 10, ky + logoSize / 2 + 3);
+  doc.setTextColor(0);
 
-  doc.setFontSize(22); doc.setFont(undefined, "bold"); doc.setTextColor(0);
-  doc.text(item.nomor_polisi || "-", margin, y); y += 26;
+  const textX = margin + logoSize + 14;
+  let ty = ky + 12;
+  doc.setFontSize(12); doc.setFont(undefined, "bold");
+  doc.text("PT PERTAMINA (PERSERO)", textX, ty); ty += 14;
+  doc.setFontSize(9); doc.setFont(undefined, "bold");
+  doc.text("DEPOT — MONITOR & AUDIT GPS, CCTV, UJI KEDAP MT & CEK RANDOM P1", textX, ty); ty += 12;
+  doc.setFontSize(8); doc.setFont(undefined, "normal"); doc.setTextColor(100);
+  doc.text("Dokumen Internal — Tidak untuk disebarluaskan", textX, ty);
+  doc.setTextColor(0);
+
+  ky += logoSize + 8;
+  doc.setLineWidth(1.4);
+  doc.line(margin, ky, pageWidth - margin, ky);
+  ky += 3;
+  doc.setLineWidth(0.6);
+  doc.line(margin, ky, pageWidth - margin, ky);
+  ky += 18;
+
+  doc.setFontSize(12); doc.setFont(undefined, "bold");
+  const titleWidth = doc.getTextWidth(judul);
+  doc.text(judul, (pageWidth - titleWidth) / 2, ky);
+  ky += 16;
+
+  doc.setFont(undefined, "normal");
+  return ky;
+};
+
+// ── Halaman info & status (halaman pertama tiap laporan) ────────────────────────
+const drawInfoPage = (doc, { kat, item }, pageWidth, margin, bottomLimit) => {
+  let y = drawKopSurat(doc, pageWidth, margin, `LAPORAN INSPEKSI — ${KATEGORI_TITLE[kat].toUpperCase()}`);
+  y += 6;
+
+  doc.setFontSize(20); doc.setFont(undefined, "bold"); doc.setTextColor(0);
+  doc.text(item.nomor_polisi || "-", margin, y); y += 24;
 
   doc.setFontSize(10); doc.setFont(undefined, "normal"); doc.setTextColor(90);
   doc.text(`Tanggal Pemeriksaan : ${formatDate(item.created_at)} ${formatTime(item.created_at) || ""}`, margin, y); y += 15;
@@ -76,14 +116,13 @@ const buildSingleItemPdf = async ({ kat, item, sertakanFoto }) => {
 
   const bermasalah = isBermasalah(kat, item);
   doc.setFillColor(bermasalah ? 254 : 220, bermasalah ? 226 : 252, bermasalah ? 226 : 231);
-  doc.roundedRect(margin, y - 12, 220, 24, 4, 4, "F");
+  doc.roundedRect(margin, y - 12, 230, 24, 4, 4, "F");
   doc.setFontSize(11); doc.setFont(undefined, "bold");
   doc.setTextColor(bermasalah ? 190 : 21, bermasalah ? 30 : 128, bermasalah ? 45 : 61);
   doc.text(`Status: ${statusLabel(kat, item)}`, margin + 10, y + 4);
   doc.setTextColor(0); doc.setFont(undefined, "normal");
-  y += 32;
+  y += 34;
 
-  // ── Detail temuan (khusus P1) ──
   if (kat === "p1" && item.inspeksi_p1_temuan?.length > 0) {
     doc.setFontSize(11); doc.setFont(undefined, "bold");
     doc.text("Temuan:", margin, y); y += 15;
@@ -98,7 +137,6 @@ const buildSingleItemPdf = async ({ kat, item, sertakanFoto }) => {
     y += 10;
   }
 
-  // ── Ringkasan checkpoint (khusus HSE) ──
   if (kat === "hse" && item._checkpoints?.length > 0) {
     doc.setFontSize(11); doc.setFont(undefined, "bold");
     doc.text("Checkpoint Uji Kedap:", margin, y); y += 15;
@@ -109,79 +147,89 @@ const buildSingleItemPdf = async ({ kat, item, sertakanFoto }) => {
       doc.text(line, margin + 6, y);
       y += 12;
     }
-    y += 10;
   }
+};
 
-  // ── Foto dokumentasi ──
-  // Layout: 2 foto per baris, ukuran lebih besar untuk kejelasan detail audit,
-  // rasio asli foto dijaga (tidak dipaksa kotak/gepeng) dengan letterbox di kotak tetap.
-  const fotoList = sertakanFoto ? (item._foto || []) : [];
-  if (fotoList.length > 0) {
-    if (y + 20 > bottomLimit) { doc.addPage(); y = margin; }
-    doc.setFontSize(11); doc.setFont(undefined, "bold");
-    doc.text(`Foto Dokumentasi (${fotoList.length}):`, margin, y); y += 20;
+// ── Halaman dokumentasi foto — format tabel: foto besar | keterangan ────────────
+// 3 baris per halaman, kop surat + judul di tiap halaman, mengikuti format
+// dokumentasi resmi standar (kop instansi + tabel foto|keterangan bergaris).
+const drawFotoPages = async (doc, { kat, item, fotoList }, pageWidth, pageHeight, margin) => {
+  const ROWS_PER_PAGE = 3;
 
-    const boxW = 230;   // lebar kotak foto
-    const boxH = 200;   // tinggi maksimal kotak foto
-    const gapX = 25;
-    const gapY = 26;
-    const captionH = 22; // ruang untuk keterangan di bawah foto
-    let x = margin;
-    let col = 0;
+  for (let idx = 0; idx < fotoList.length; idx += ROWS_PER_PAGE) {
+    doc.addPage();
+    const tableTop = drawKopSurat(doc, pageWidth, margin, `DOKUMENTASI FOTO — ${item.nomor_polisi || "-"}`) + 4;
+    const batch = fotoList.slice(idx, idx + ROWS_PER_PAGE);
 
-    for (const f of fotoList) {
-      if (y + boxH + captionH > bottomLimit) { doc.addPage(); y = margin; x = margin; col = 0; }
+    const tableLeft  = margin;
+    const tableRight = pageWidth - margin;
+    const tableWidth = tableRight - tableLeft;
+    const photoColW  = tableWidth * 0.62;
+    const rowHeight  = (pageHeight - margin - tableTop) / ROWS_PER_PAGE;
+    const tableBottom = tableTop + rowHeight * batch.length;
+
+    // Border luar tabel + garis vertikal pemisah foto|keterangan
+    doc.setDrawColor(0); doc.setLineWidth(1);
+    doc.rect(tableLeft, tableTop, tableWidth, tableBottom - tableTop);
+    doc.line(tableLeft + photoColW, tableTop, tableLeft + photoColW, tableBottom);
+
+    for (let r = 0; r < batch.length; r += 1) {
+      const rowTop = tableTop + r * rowHeight;
+      if (r > 0) doc.line(tableLeft, rowTop, tableRight, rowTop);
+
+      const f = batch[r];
+      const cellPad = 10;
+      const boxX = tableLeft + cellPad;
+      const boxY = rowTop + cellPad;
+      const boxW = photoColW - cellPad * 2;
+      const boxH = rowHeight - cellPad * 2;
 
       const base64 = await urlToBase64(f.url);
-      let dW = boxW, dH = boxW * 0.75; // fallback 4:3 kalau dimensi asli gagal dibaca
-
       if (base64) {
-        const dims = await new Promise((resolve) => {
-          const img = new Image();
-          img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight });
-          img.onerror = () => resolve(null);
-          img.src = base64;
-        });
+        const dims = await getImageDims(base64);
+        let dW = boxW, dH = boxH;
         if (dims && dims.w > 0 && dims.h > 0) {
-          dW = boxW;
-          dH = boxW * (dims.h / dims.w);
-          if (dH > boxH) { dH = boxH; dW = boxH * (dims.w / dims.h); }
+          const ratio = dims.w / dims.h;
+          dW = boxW; dH = dW / ratio;
+          if (dH > boxH) { dH = boxH; dW = dH * ratio; }
         }
-        const offsetX = (boxW - dW) / 2;
-        const offsetY = (boxH - dH) / 2;
+        const offsetX = boxX + (boxW - dW) / 2;
+        const offsetY = boxY + (boxH - dH) / 2;
         const fmt = base64.includes("image/png") ? "PNG" : "JPEG";
-        doc.setDrawColor(230);
-        doc.rect(x, y, boxW, boxH); // outline kotak — konsisten walau foto lebih kecil dari kotak
-        try { doc.addImage(base64, fmt, x + offsetX, y + offsetY, dW, dH); }
-        catch { /* lewati foto yang gagal diproses, kotak outline tetap tampil */ }
+        try { doc.addImage(base64, fmt, offsetX, offsetY, dW, dH); }
+        catch { /* lewati foto yang gagal diproses */ }
       } else {
-        doc.setDrawColor(220);
-        doc.rect(x, y, boxW, boxH);
         doc.setFontSize(8); doc.setTextColor(150);
-        doc.text("Foto gagal dimuat", x + boxW / 2 - 30, y + boxH / 2);
+        doc.text("Foto gagal dimuat", boxX + boxW / 2 - 32, boxY + boxH / 2);
         doc.setTextColor(0);
       }
 
-      if (f.label) {
-        doc.setFontSize(8); doc.setTextColor(100);
-        const capLines = doc.splitTextToSize(f.label, boxW);
-        doc.text(capLines, x, y + boxH + 13);
-        doc.setTextColor(0);
-      }
-
-      col += 1;
-      if (col >= 2) {
-        col = 0;
-        x = margin;
-        y += boxH + captionH + gapY;
-      } else {
-        x += boxW + gapX;
-      }
+      // Keterangan — center horizontal & vertikal di kolom kanan
+      const descWidth = tableWidth - photoColW - 24;
+      const descCenterX = tableLeft + photoColW + 12 + descWidth / 2;
+      doc.setFontSize(9.5); doc.setFont(undefined, "normal"); doc.setTextColor(30);
+      const capLines = doc.splitTextToSize(f.label || "-", descWidth);
+      const textBlockH = capLines.length * 12;
+      const textY = rowTop + (rowHeight - textBlockH) / 2 + 9;
+      doc.text(capLines, descCenterX, textY, { align: "center" });
+      doc.setTextColor(0);
     }
-  } else if (sertakanFoto) {
-    doc.setFontSize(9); doc.setTextColor(140);
-    doc.text("Tidak ada foto dokumentasi untuk laporan ini.", margin, y);
-    doc.setTextColor(0);
+  }
+};
+
+// ── Bangun 1 dokumen PDF lengkap untuk 1 laporan (1 kendaraan, 1 pemeriksaan) ───
+const buildSingleItemPdf = async ({ kat, item, sertakanFoto }) => {
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const pageWidth  = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 35;
+  const bottomLimit = pageHeight - 50;
+
+  drawInfoPage(doc, { kat, item }, pageWidth, margin, bottomLimit);
+
+  const fotoList = sertakanFoto ? (item._foto || []) : [];
+  if (fotoList.length > 0) {
+    await drawFotoPages(doc, { kat, item, fotoList }, pageWidth, pageHeight, margin);
   }
 
   return doc;
