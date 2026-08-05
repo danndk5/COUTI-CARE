@@ -3,11 +3,14 @@ import Icon from "../components/Icon";
 import ThemeToggle from "../components/ThemeToggle";
 import { useTheme } from "../context/ThemeContext";
 import { supabase } from "../lib/supabase";
+import { useBackableView, goBack } from "../hooks/useBackableView";
 
 // Lebar tampilan dikunci seukuran HP — akun P1 memang cuma dipakai di ponsel
 const FRAME_WIDTH = 430;
 
 // ── List kendaraan (sub-view dari stat card) ────────────────────────────────
+// onBack di sini sudah dibungkus goBack() oleh pemanggilnya (lihat P1Dashboard),
+// supaya konsisten dengan tombol kembali fisik HP (sama-sama lewat history.back()).
 const KendaraanList = ({ title, items, onBack, theme }) => (
   <div style={{ minHeight: "100vh", background: theme.bg }}>
     <div style={{ maxWidth: FRAME_WIDTH, margin: "0 auto" }}>
@@ -54,11 +57,11 @@ const KendaraanList = ({ title, items, onBack, theme }) => (
 );
 
 // ── Nav khusus P1 (selalu tab bawah, dikunci lebar HP) ──────────────────────
+// Item "Riwayat" dihapus sesuai permintaan.
 const NAV_ITEMS = [
   { id: "dashboard",     label: "Beranda",       icon: "home"    },
   { id: "form",          label: "Pengecekan",    icon: "plus"    },
   { id: "tindak-lanjut", label: "Tindak Lanjut", icon: "wrench"  },
-  { id: "history",       label: "Riwayat",       icon: "history" },
 ];
 
 const P1Nav = ({ active, onNav, theme }) => (
@@ -91,6 +94,13 @@ const P1Dashboard = ({ role, onNav, onLogout }) => {
   const [loading,     setLoading]     = useState(true);
   const [view,        setView]        = useState("dashboard");
 
+  // Fix tombol kembali HP: setiap kali "view" pindah dari dashboard ke sub-view
+  // (all/perlu/selesai), daftarkan satu langkah history yang bisa "ditangkap"
+  // tombol kembali fisik — supaya kembali cuma menutup sub-view ini dulu,
+  // bukan langsung lompat ke luar dashboard. Pola sama persis dengan
+  // PhotoLightbox di HSEFormScreen.jsx.
+  useBackableView(view !== "dashboard", () => setView("dashboard"));
+
   useEffect(() => {
     const load = async () => {
       setLoading(true);
@@ -114,9 +124,12 @@ const P1Dashboard = ({ role, onNav, onLogout }) => {
   const perluTindakPreview = perluTindak.slice(0, 3);
   const displayName = currentUser?.nama || "P1 Officer";
 
-  if (view === "all")     return <KendaraanList title="Total Diperiksa"       items={inspeksiAll}  onBack={() => setView("dashboard")} theme={theme} />;
-  if (view === "perlu")   return <KendaraanList title="Perlu Ditindaklanjuti" items={perluTindak}  onBack={() => setView("dashboard")} theme={theme} />;
-  if (view === "selesai") return <KendaraanList title="Sudah Ditindaklanjuti" items={sudahTindak}  onBack={() => setView("dashboard")} theme={theme} />;
+  // onBack dari tiap sub-view dibungkus goBack() supaya tombol "Kembali" di layar
+  // dan tombol kembali fisik HP sama-sama lewat window.history.back() — history
+  // stack jadi konsisten, tidak ada state "nyangkut" dari pushState di useBackableView.
+  if (view === "all")     return <KendaraanList title="Total Diperiksa"       items={inspeksiAll}  onBack={() => goBack(() => setView("dashboard"))} theme={theme} />;
+  if (view === "perlu")   return <KendaraanList title="Perlu Ditindaklanjuti" items={perluTindak}  onBack={() => goBack(() => setView("dashboard"))} theme={theme} />;
+  if (view === "selesai") return <KendaraanList title="Sudah Ditindaklanjuti" items={sudahTindak}  onBack={() => goBack(() => setView("dashboard"))} theme={theme} />;
 
   const STATS = [
     { val: inspeksiAll.length, label: "Total",        view: "all",     bg: theme.primaryLight, text: theme.primary },
