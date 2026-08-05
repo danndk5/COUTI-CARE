@@ -23,6 +23,7 @@ import { useBreakpoint }      from "./hooks/useBreakpoint";
 import { MOBILE_MAX_WIDTH, DESKTOP_CONTENT_MAX_WIDTH } from "./styles/layout";
 import theme from "./styles/theme";
 import { ThemeProvider } from "./context/ThemeContext";
+import { hasOpenInternalView } from "./hooks/internalViewFlag";
 
 // Helper normalisasi role — import dari BottomNav supaya konsisten
 import { isTeknisi, isDepot, isHSE, isP1 } from "./components/BottomNav";
@@ -159,6 +160,13 @@ const AppInner = () => {
       }
 
       if (incomingScreen === "dashboard" && screenRef.current === "dashboard") {
+        // Kalau ada tampilan internal (mis. daftar kendaraan di HSEDashboard,
+        // lightbox foto, dsb.) yang lagi kebuka lewat useBackableView, popstate
+        // ini sebenarnya cuma menutup tampilan itu — BUKAN usaha keluar dari
+        // aplikasi. Biarkan hook internal yang menangani, jangan tampilkan
+        // dialog konfirmasi keluar di sini.
+        if (hasOpenInternalView()) return;
+
         window.history.pushState({ screen: "dashboard", guard: true }, "");
         setShowExitConfirm(true);
         return;

@@ -102,7 +102,7 @@ const ExpiryBanner = ({ theme, items, onClick }) => {
 // ── ExpiryListModal — daftar lengkap kendaraan yang perlu perhatian ───────────
 const ExpiryListModal = ({ theme, items, onClose }) => (
   <div
-    onClick={onClose}
+    onClick={() => goBack(onClose)}
     style={{
       position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 999,
       display: "flex", alignItems: "flex-end", justifyContent: "center",
@@ -117,7 +117,7 @@ const ExpiryListModal = ({ theme, items, onClose }) => (
     >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
         <div style={{ fontWeight: 800, fontSize: 16, color: theme.text }}>Masa Berlaku Perlu Perhatian</div>
-        <div onClick={onClose} style={{ cursor: "pointer", fontSize: 18, color: theme.textMuted }}>✕</div>
+        <div onClick={() => goBack(onClose)} style={{ cursor: "pointer", fontSize: 18, color: theme.textMuted }}>✕</div>
       </div>
       {items.map((k) => (
         <div key={k.nomor_polisi + k._jenis} style={{
@@ -368,6 +368,10 @@ const HSEDashboard = ({ role, onNav, onLogout }) => {
   // aplikasi. Tombol "Kembali" versi UI di InspeksiList juga lewat goBack()
   // supaya jalurnya konsisten dengan tombol back HP.
   useBackableView(view !== "dashboard", () => setView("dashboard"));
+
+  // Modal peringatan masa berlaku (ExpiryListModal) juga perlu ditandai —
+  // pola bug yang sama kalau tidak: back HP bisa nembus ke luar aplikasi.
+  useBackableView(showExpiryModal, () => setShowExpiryModal(false));
 
   useEffect(() => {
     const loadData = async () => {
