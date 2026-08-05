@@ -1,10 +1,12 @@
 import { useEffect, useRef } from "react";
-import { markInternalViewOpen, markInternalViewClosed } from "./internalViewFlag";
+import { pushInternalView, popInternalViewById } from "./internalViewFlag";
 
 // ── useBackableView ────────────────────────────────────────────────────────
 // Membuat tombol Back bawaan HP (fisik/gesture Android) menutup SATU langkah
 // tampilan internal (mis. detail -> list, atau lightbox -> tutup) alih-alih
-// langsung tembus keluar ke halaman sebelumnya di riwayat browser.
+// langsung tembus keluar ke halaman sebelumnya di riwayat browser — dan kalau
+// beberapa tampilan internal bertumpuk (mis. lightbox foto di atas layar
+// detail), 1x tombol back cuma menutup yang PALING ATAS, bukan sekaligus dua.
 //
 // Pemakaian:
 //   useBackableView(isOpen, closeFn)
@@ -15,54 +17,28 @@ import { markInternalViewOpen, markInternalViewClosed } from "./internalViewFlag
 // goBack(closeFn) di bawah ini, BUKAN langsung memanggil closeFn. Supaya
 // jalur tombol HP & tombol UI selalu konsisten dan tidak menyisakan
 // riwayat "hantu" yang membuat tombol kembali berikutnya terasa aneh.
-//
-// Hook ini juga menandai internalViewFlag selagi tampilan terbuka, supaya
-// App.jsx tahu untuk TIDAK menampilkan dialog "Keluar dari aplikasi?" saat
-// popstate ini sebenarnya cuma menutup tampilan internal, bukan usaha keluar.
 export function useBackableView(isOpen, closeFn) {
-  const pushedRef = useRef(false);
-  const markedRef = useRef(false);
+  const idRef = useRef(null);
   const closeFnRef = useRef(closeFn);
   closeFnRef.current = closeFn;
 
   useEffect(() => {
-    if (isOpen && !pushedRef.current) {
+    if (isOpen && idRef.current === null) {
       window.history.pushState({ __view: true }, "");
-      pushedRef.current = true;
-      markInternalViewOpen();
-      markedRef.current = true;
+      idRef.current = pushInternalView(() => closeFnRef.current());
     }
-    if (!isOpen) {
-      pushedRef.current = false;
-      if (markedRef.current) {
-        markInternalViewClosed();
-        markedRef.current = false;
-      }
+    if (!isOpen && idRef.current !== null) {
+      popInternalViewById(idRef.current);
+      idRef.current = null;
     }
   }, [isOpen]);
 
-  useEffect(() => {
-    const handlePopState = () => {
-      if (pushedRef.current) {
-        pushedRef.current = false;
-        if (markedRef.current) {
-          markInternalViewClosed();
-          markedRef.current = false;
-        }
-        closeFnRef.current();
-      }
-    };
-    window.addEventListener("popstate", handlePopState);
-    return () => window.removeEventListener("popstate", handlePopState);
-  }, []);
-
-  // Jaga-jaga kalau komponen unmount total saat tampilan masih "terbuka"
-  // (mis. user pindah layar lain lewat jalur yang bukan popstate/goBack).
+  // Jaga-jaga kalau komponen unmount total saat tampilan masih "terbuka".
   useEffect(() => {
     return () => {
-      if (markedRef.current) {
-        markInternalViewClosed();
-        markedRef.current = false;
+      if (idRef.current !== null) {
+        popInternalViewById(idRef.current);
+        idRef.current = null;
       }
     };
   }, []);
