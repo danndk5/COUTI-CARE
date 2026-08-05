@@ -6,7 +6,7 @@ import SectionLabel from "../components/SectionLabel";
 import theme from "../styles/theme";
 import { supabase } from "../lib/supabase";
 import { useCameraGPS } from "../hooks/useCameraGPS";
-import { useBackableView } from "../hooks/useBackableView";
+import { useBackableView, goBack } from "../hooks/useBackableView";
 
 // ── Draft persistence ─────────────────────────────────────────────────────────
 // Beda dari HSEFormScreen (form linear satu draft), di sini yang disimpan
@@ -312,6 +312,13 @@ const P1TindakLanjut = ({ onBack, onNav }) => {
   const [saving,       setSaving]       = useState(false);
   const [previewUrl,   setPreviewUrl]   = useState(null);
 
+  // Fix tombol kembali HP — pola identik dengan HSETindakLanjut.jsx:
+  // "selected" truthy berarti sedang di layar detail (setara view === "detail"
+  // di file HSE). Begitu detail dibuka, satu history-step "backable" otomatis
+  // terpasang, supaya tombol kembali fisik cuma menutup detail ini dulu,
+  // bukan langsung lompat ke Beranda/keluar aplikasi.
+  useBackableView(!!selected, () => setSelected(null));
+
   // GPS/kamera di-"hangat"-kan sejak layar ini dibuka — sama seperti
   // HSEFormScreen / P1FormScreen, supaya foto tindak lanjut langsung instan.
   const { warmUp, coolDown, requestAccess } = useCameraGPS();
@@ -511,7 +518,7 @@ const P1TindakLanjut = ({ onBack, onNav }) => {
     return (
       <div style={{ minHeight: "100vh", background: theme.bg, display: "flex", flexDirection: "column" }}>
         <div style={{ background: theme.surface, padding: "48px 16px 16px", borderBottom: `1px solid ${theme.border}`, boxShadow: theme.shadow }}>
-          <div onClick={() => setSelected(null)} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, cursor: "pointer", color: theme.textSub, fontSize: 13 }}>
+          <div onClick={() => goBack(() => setSelected(null))} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, cursor: "pointer", color: theme.textSub, fontSize: 13 }}>
             <Icon name="arrow" size={16} color={theme.textSub} /> Kembali
           </div>
           <div style={{ fontWeight: 800, fontSize: 18, color: theme.text }}>Tindak Lanjut</div>

@@ -252,7 +252,10 @@ const RepairPhotoSlot = ({ label, kategori, foto, onFoto, keterangan, onKeterang
 // ── TindakLanjutDetail HSE ────────────────────────────────────────────────────
 // Tindak lanjut per KENDARAAN. Setiap foto temuan WAJIB dipasangkan 1 foto bukti
 // perbaikan LENGKAP DENGAN keterangannya sendiri (bukan satu keterangan di akhir).
+// Alur sekarang 2 step (sama pola dengan HSEFormScreen): "form" → isi bukti
+// perbaikan, lalu "ringkasan" → tinjau ulang semua sebelum benar-benar dikirim.
 const TindakLanjutDetail = ({ inspeksi, fotoTemuan, onBack, onSelesai }) => {
+  const [step, setStep] = useState("form"); // "form" | "ringkasan"
   const [buktiPerbaikan, setBuktiPerbaikan] = useState(() => fotoTemuan.map(() => null));
   const [ketPerbaikan,   setKetPerbaikan]   = useState(() => fotoTemuan.map(() => ""));
   const [previewUrl,     setPreviewUrl]     = useState(null);
@@ -301,7 +304,8 @@ const TindakLanjutDetail = ({ inspeksi, fotoTemuan, onBack, onSelesai }) => {
     && jumlahLengkap === fotoTemuan.length
     && ketPerbaikan.every((k) => k.trim());
 
-  const handleSubmit = async () => {
+  // Validasi lalu masuk ke layar Ringkasan — belum benar-benar kirim di sini.
+  const handleTinjau = () => {
     const e = {};
     buktiPerbaikan.forEach((f, i) => {
       if (!f) e[`bukti_${i}`] = true;
@@ -312,7 +316,11 @@ const TindakLanjutDetail = ({ inspeksi, fotoTemuan, onBack, onSelesai }) => {
       alert(`Semua foto bukti perbaikan beserta keterangannya wajib diisi (${jumlahLengkap}/${fotoTemuan.length}).`);
       return;
     }
+    setStep("ringkasan");
+  };
 
+  // Submit sesungguhnya — dipanggil dari layar Ringkasan.
+  const handleSubmit = async () => {
     setSubmitting(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -353,6 +361,79 @@ const TindakLanjutDetail = ({ inspeksi, fotoTemuan, onBack, onSelesai }) => {
     }
   };
 
+  // ── STEP RINGKASAN — tinjau ulang semua sebelum benar-benar dikirim ───────
+  if (step === "ringkasan") {
+    return (
+      <div style={{ minHeight: "100vh", background: theme.bg, display: "flex", flexDirection: "column" }}>
+        <div style={{ background: theme.surface, padding: "48px 16px 16px", borderBottom: `1px solid ${theme.border}`, boxShadow: theme.shadow }}>
+          <div onClick={() => setStep("form")} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, cursor: "pointer", color: theme.textSub, fontSize: 13 }}>
+            <Icon name="arrow" size={16} color={theme.textSub} /> Kembali & Edit
+          </div>
+          <div style={{ fontWeight: 800, fontSize: 18, color: theme.text }}>Ringkasan Sebelum Kirim</div>
+          <div style={{ fontSize: 13, color: theme.textMuted, marginTop: 2 }}>
+            {inspeksi.nomor_polisi} · {inspeksi.transportir}
+          </div>
+        </div>
+
+        <div style={{ flex: 1, overflowY: "auto", padding: "20px 16px", paddingBottom: 100 }}>
+          <div style={{
+            marginBottom: 16, padding: "14px 16px", borderRadius: 14, textAlign: "center",
+            background: "#D1FAE5", color: theme.success, fontWeight: 800, fontSize: 15,
+          }}>
+            ✅ SEMUA TEMUAN SUDAH DIPERBAIKI ({fotoTemuan.length}/{fotoTemuan.length})
+          </div>
+
+          <SectionLabel>Detail Perbaikan</SectionLabel>
+          {fotoTemuan.map((f, idx) => (
+            <div key={f.id} style={{
+              marginBottom: 14, padding: 12, borderRadius: 12,
+              background: theme.surface, border: `1px solid ${theme.border}`,
+            }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: theme.text, marginBottom: 8 }}>
+                Temuan {idx + 1}
+              </div>
+              <div style={{ display: "flex", gap: 10 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 10, color: theme.danger, marginBottom: 4, fontWeight: 700 }}>SEBELUM</div>
+                  <img
+                    src={f.url} alt="temuan" onClick={() => setPreviewUrl(f.url)}
+                    style={{ width: "100%", height: 90, objectFit: "cover", borderRadius: 8, cursor: "pointer" }}
+                  />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 10, color: theme.success, marginBottom: 4, fontWeight: 700 }}>SESUDAH</div>
+                  <img
+                    src={buktiPerbaikan[idx]?.url} alt="perbaikan" onClick={() => setPreviewUrl(buktiPerbaikan[idx]?.url)}
+                    style={{ width: "100%", height: 90, objectFit: "cover", borderRadius: 8, cursor: "pointer" }}
+                  />
+                </div>
+              </div>
+              <div style={{ fontSize: 12, color: theme.textSub, background: theme.surfaceAlt, padding: "8px 10px", borderRadius: 8, marginTop: 8 }}>
+                {ketPerbaikan[idx]}
+              </div>
+            </div>
+          ))}
+
+          <div style={{ fontSize: 12, color: theme.textMuted, textAlign: "center", marginTop: 4 }}>
+            Pastikan semua data sudah benar. Data tidak dapat diedit setelah dikirim.
+          </div>
+        </div>
+
+        <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 430, padding: "12px 16px", background: theme.surface, borderTop: `1px solid ${theme.border}`, display: "flex", gap: 10 }}>
+          <Btn onClick={() => setStep("form")} variant="ghost" style={{ flex: 1 }} disabled={submitting}>
+            ← Edit
+          </Btn>
+          <Btn onClick={handleSubmit} variant="primary" icon="check" style={{ flex: 2 }} disabled={submitting}>
+            {submitting ? "Mengirim..." : "✅ Kirim Sekarang"}
+          </Btn>
+        </div>
+
+        <PhotoLightbox url={previewUrl} onClose={() => setPreviewUrl(null)} />
+      </div>
+    );
+  }
+
+  // ── STEP FORM — isi bukti perbaikan tiap temuan ────────────────────────────
   return (
     <div style={{ minHeight: "100vh", background: theme.bg, display: "flex", flexDirection: "column" }}>
       {/* Header */}
@@ -423,8 +504,8 @@ const TindakLanjutDetail = ({ inspeksi, fotoTemuan, onBack, onSelesai }) => {
         width: "100%", maxWidth: 430, padding: "12px 16px",
         background: theme.surface, borderTop: `1px solid ${theme.border}`,
       }}>
-        <Btn onClick={handleSubmit} variant="primary" icon="check" disabled={submitting || !semuaLengkap}>
-          {submitting ? "Menyimpan..." : `Simpan Tindak Lanjut (${jumlahLengkap}/${fotoTemuan.length} foto)`}
+        <Btn onClick={handleTinjau} variant="primary" icon="check" disabled={submitting || !semuaLengkap}>
+          Tinjau & Kirim ({jumlahLengkap}/{fotoTemuan.length} foto) →
         </Btn>
       </div>
 
