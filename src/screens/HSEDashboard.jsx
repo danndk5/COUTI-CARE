@@ -6,6 +6,7 @@ import SectionLabel from "../components/SectionLabel";
 import ThemeToggle from "../components/ThemeToggle";
 import { useTheme } from "../context/ThemeContext";
 import { supabase } from "../lib/supabase";
+import { useBackableView, goBack } from "../hooks/useBackableView";
 
 // Lebar tampilan dikunci seukuran HP — role ini cuma dipakai di ponsel
 const FRAME_WIDTH = 430;
@@ -292,7 +293,7 @@ const InspeksiList = ({ title, items, onBack, theme }) => (
   <div style={{ minHeight: "100vh", background: theme.bg }}>
     <div style={{ maxWidth: FRAME_WIDTH, margin: "0 auto" }}>
       <div style={{ background: theme.surface, padding: "48px 16px 16px", borderBottom: `1px solid ${theme.border}`, boxShadow: theme.shadow }}>
-        <div onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, cursor: "pointer", color: theme.textSub, fontSize: 13 }}>
+        <div onClick={() => goBack(onBack)} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, cursor: "pointer", color: theme.textSub, fontSize: 13 }}>
           <Icon name="arrow" size={16} color={theme.textSub} /> Kembali
         </div>
         <div style={{ fontWeight: 800, fontSize: 18, color: theme.text }}>{title}</div>
@@ -361,6 +362,12 @@ const HSEDashboard = ({ role, onNav, onLogout }) => {
   // Peringatan masa berlaku Head Truck / Tangki
   const [expiryItems,     setExpiryItems]     = useState([]);
   const [showExpiryModal, setShowExpiryModal] = useState(false);
+
+  // Tombol back HP di daftar kendaraan (Total Diperiksa / Perlu Ditindaklanjuti /
+  // Sudah Ditindaklanjuti) mundur ke Beranda dulu — bukan langsung tembus ke luar
+  // aplikasi. Tombol "Kembali" versi UI di InspeksiList juga lewat goBack()
+  // supaya jalurnya konsisten dengan tombol back HP.
+  useBackableView(view !== "dashboard", () => setView("dashboard"));
 
   useEffect(() => {
     const loadData = async () => {
