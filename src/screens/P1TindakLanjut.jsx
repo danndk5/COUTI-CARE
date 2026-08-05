@@ -242,6 +242,28 @@ const CameraCaptureSingle = ({ label, onFoto, foto, errorFoto, onPreview, reques
   );
 };
 
+// ── Foto temuan ASLI dari P1FormScreen (bukan foto tindak lanjut) ────────────
+// Sumber: tabel foto_inspeksi_p1, direlasikan via temuan_id → inspeksi_p1_temuan.id
+// FIX BUG: sebelumnya foto ini sama sekali tidak diambil dari query maupun
+// dirender di TindakLanjutItem, jadi P1 (dan siapa pun yang menindaklanjuti)
+// tidak bisa melihat foto asli temuan yang dilaporkan.
+const TemuanFotoGrid = ({ fotoList, onPreview }) => {
+  if (!fotoList || fotoList.length === 0) return null;
+  return (
+    <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+      {fotoList.map((f) => (
+        <img
+          key={f.id}
+          src={f.url}
+          alt="Foto temuan"
+          onClick={() => onPreview?.(f.url)}
+          style={{ width: "100%", height: 80, objectFit: "cover", borderRadius: 8, cursor: "pointer", border: `1px solid ${theme.border}` }}
+        />
+      ))}
+    </div>
+  );
+};
+
 // ── Form Tindak Lanjut per temuan ─────────────────────────────────────────────
 const TindakLanjutItem = ({ idx, temuan, tl, onChange, onPreview, requestAccess }) => {
   const set = (k) => (v) => onChange(temuan.id, k, v);
@@ -249,11 +271,12 @@ const TindakLanjutItem = ({ idx, temuan, tl, onChange, onPreview, requestAccess 
 
   return (
     <div style={{ background: theme.surface, border: `1.5px solid ${theme.border}`, borderRadius: 14, padding: 16, marginBottom: 14 }}>
-      {/* Temuan asli */}
+      {/* Temuan asli — sekarang termasuk foto dokumentasi temuan (fix bug) */}
       <div style={{ marginBottom: 12, padding: "10px 12px", background: theme.dangerLight, borderRadius: 10 }}>
         <div style={{ fontSize: 11, color: theme.danger, fontWeight: 700, marginBottom: 2 }}>📌 TEMUAN #{idx + 1}</div>
         <div style={{ fontWeight: 700, fontSize: 14, color: theme.text }}>{temuan.judul}</div>
         <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 4 }}>{temuan.keterangan}</div>
+        <TemuanFotoGrid fotoList={temuan.foto_inspeksi_p1} onPreview={onPreview} />
       </div>
 
       {/* Form tindak lanjut */}
@@ -365,9 +388,13 @@ const P1TindakLanjut = ({ onBack, onNav }) => {
     setLoading(true);
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setLoading(false); return; }
+    // FIX BUG: query sebelumnya hanya select inspeksi_p1_temuan(*), tidak
+    // pernah mengambil foto_inspeksi_p1 sama sekali. Sekarang di-nested
+    // supaya foto dokumentasi temuan ikut terbawa dan bisa dirender di
+    // TindakLanjutItem (lihat TemuanFotoGrid).
     const { data } = await supabase
       .from("inspeksi_p1")
-      .select("*, inspeksi_p1_temuan(*)")
+      .select("*, inspeksi_p1_temuan(*, foto_inspeksi_p1(*))")
       .eq("user_id", user.id)
       .neq("status", "selesai")
       .order("created_at", { ascending: false });
