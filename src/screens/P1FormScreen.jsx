@@ -8,8 +8,8 @@ import { supabase } from "../lib/supabase";
 import { useCameraGPS } from "../hooks/useCameraGPS";
 import { useBackableView, goBack } from "../hooks/useBackableView";
 
-// ── Draft persistence (agar data tidak hilang kalau app ke-close / ke tombol home) ──
-const DRAFT_KEY = "p1_form_draft_v1";
+// ── Draft persistence (agar data tidak hilang kalau app ke-close / tombol home) ──
+const DRAFT_KEY = "draft_form_p1";
 const DRAFT_EXPIRE_MS = 6 * 60 * 60 * 1000;
 
 const saveDraft = (data) => {
@@ -27,39 +27,27 @@ const clearDraft = () => {
 
 const emptyTemuan = () => ({ judul: "", keterangan: "", foto: null, errorJudul: false, errorKet: false, errorFoto: false });
 
-// ── Overlay & upload helper (sama polanya dengan HSEFormScreen) ──────────────
-const decimalToDMS = (decimal, posDir, negDir) => {
-  const dir = decimal >= 0 ? posDir : negDir;
-  const abs = Math.abs(decimal);
-  const deg = Math.floor(abs);
-  const minFull = (abs - deg) * 60;
-  const min = Math.floor(minFull);
-  const sec = Math.round((minFull - min) * 60);
-  return `${deg}\u00b0${min}'${sec}"${dir}`;
+// ── Overlay helper — resize dulu ke maks 1600px sebelum overlay, supaya
+// upload lebih ringan & cepat (sama seperti pola HSEFormScreen) ─────────────
+const decimalToDMS = (d, p, n) => {
+  const dir = d >= 0 ? p : n, abs = Math.abs(d);
+  const deg = Math.floor(abs), mf = (abs - deg) * 60, min = Math.floor(mf);
+  return `${deg}\u00b0${min}'${Math.round((mf - min) * 60)}"${dir}`;
 };
-const formatDMS = (lat, lng) =>
-  `${decimalToDMS(lat, "N", "S")} ${decimalToDMS(lng, "E", "W")}`;
+const formatDMS = (lat, lng) => `${decimalToDMS(lat,"N","S")} ${decimalToDMS(lng,"E","W")}`;
 const formatServerTime = (date) => {
-  const hari  = ["Minggu","Senin","Selasa","Rabu","Kamis","Jumat","Sabtu"][date.getDay()];
-  const bulan = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"][date.getMonth()];
-  const hh = String(date.getHours()).padStart(2,"0");
-  const mm = String(date.getMinutes()).padStart(2,"0");
-  const ss = String(date.getSeconds()).padStart(2,"0");
-  return `${hari}, ${date.getDate()} ${bulan} ${date.getFullYear()} ${hh}:${mm}:${ss}`;
+  const H = ["Minggu","Senin","Selasa","Rabu","Kamis","Jumat","Sabtu"][date.getDay()];
+  const B = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"][date.getMonth()];
+  return `${H}, ${date.getDate()} ${B} ${date.getFullYear()} ${String(date.getHours()).padStart(2,"0")}:${String(date.getMinutes()).padStart(2,"0")}:${String(date.getSeconds()).padStart(2,"0")}`;
 };
 const formatTanggal = (dateStr) => {
   if (!dateStr) return "-";
-  try {
-    return new Date(dateStr).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" });
-  } catch { return dateStr; }
+  return new Date(dateStr).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" });
 };
 
 const applyOverlay = async (file, pos) => {
   let serverTime = new Date();
-  try {
-    const { data } = await supabase.rpc("get_server_time");
-    if (data) serverTime = new Date(data);
-  } catch {}
+  try { const { data } = await supabase.rpc("get_server_time"); if (data) serverTime = new Date(data); } catch {}
 
   const { latitude, longitude } = pos.coords;
   const dmsStr  = formatDMS(latitude, longitude);
@@ -86,46 +74,51 @@ const applyOverlay = async (file, pos) => {
   }
 
   const canvas = document.createElement("canvas");
-  canvas.width  = targetW;
+  canvas.width = targetW;
   canvas.height = targetH;
   const ctx = canvas.getContext("2d");
   ctx.drawImage(bitmap, 0, 0, targetW, targetH);
   if (bitmap.close) bitmap.close();
 
   const fontSize = Math.max(20, Math.round(targetW * 0.028));
-  const pad      = fontSize * 0.7;
-  const lineH    = fontSize * 1.6;
+  const pad = fontSize * 0.7;
+  const lineH = fontSize * 1.6;
   ctx.font = `bold ${fontSize}px Arial, sans-serif`;
   const boxW = Math.max(ctx.measureText(timeStr).width, ctx.measureText(dmsStr).width) + pad * 2.5;
   const boxH = lineH * 2 + pad * 1.5;
-  const x    = pad;
-  const y    = canvas.height - boxH - pad;
+  const x = pad;
+  const y = canvas.height - boxH - pad;
   ctx.fillStyle = "rgba(0,0,0,0.60)";
   ctx.fillRect(x, y, boxW, boxH);
   ctx.font = `bold ${fontSize}px Arial, sans-serif`;
   ctx.fillStyle = "#ffffff";
   ctx.fillText(timeStr, x + pad, y + pad + fontSize);
-  ctx.fillText(dmsStr,  x + pad, y + pad + fontSize + lineH);
+  ctx.fillText(dmsStr, x + pad, y + pad + fontSize + lineH);
 
   return new Promise((res) => canvas.toBlob(res, "image/jpeg", 0.9));
 };
 
-const uploadFoto = async (file, kategori, pos) => {
+const uploadFoto = async (file, pos) => {
   const blob = await applyOverlay(file, pos);
-  const fileName = `p1-${kategori}-${Date.now()}.jpg`;
-  const { data, error } = await supabase.storage
-    .from("foto-inspeksi").upload(fileName, blob, { contentType: "image/jpeg" });
+  const fileName = `p1-${Date.now()}.jpg`;
+  const { data, error } = await supabase.storage.from("foto-inspeksi").upload(fileName, blob, { contentType: "image/jpeg" });
   if (error) throw new Error("Foto gagal diupload: " + error.message);
   const { data: pub } = supabase.storage.from("foto-inspeksi").getPublicUrl(data.path);
   return { name: fileName, url: pub.publicUrl, path: data.path };
 };
 
-// ── PhotoLightbox — preview foto full-screen sebelum dikirim ──────────────────
-// Tombol back HP menutup lightbox ini (bukan langsung keluar ke Beranda) —
-// lihat useBackableView di hooks/useBackableView.js.
+// ── InfoRow — tampilan data kendaraan readonly ───────────────────────────────
+const InfoRow = ({ label, value, highlight }) => (
+  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: `1px solid ${theme.border}` }}>
+    <div style={{ fontSize: 12, color: theme.textMuted }}>{label}</div>
+    <div style={{ fontSize: 13, fontWeight: 600, color: highlight ? theme.danger : theme.text, textAlign: "right", maxWidth: "60%" }}>{value || "-"}</div>
+  </div>
+);
+
+// ── PhotoLightbox — preview full-screen. Tombol back HP menutup lightbox ini
+// dulu (bukan langsung keluar dari form) — sama seperti pola HSEFormScreen. ──
 const PhotoLightbox = ({ url, onClose }) => {
   useBackableView(!!url, onClose);
-
   if (!url) return null;
   return (
     <div
@@ -158,43 +151,34 @@ const PhotoLightbox = ({ url, onClose }) => {
   );
 };
 
-// ── InfoRow — tampilan data kendaraan readonly ───────────────────────────────
-const InfoRow = ({ label, value, highlight }) => (
-  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: `1px solid ${theme.border}` }}>
-    <div style={{ fontSize: 12, color: theme.textMuted }}>{label}</div>
-    <div style={{ fontSize: 13, fontWeight: 600, color: highlight ? theme.danger : theme.text, textAlign: "right", maxWidth: "60%" }}>{value || "-"}</div>
-  </div>
-);
-
-// ── CameraCaptureSingle — 1 foto wajib, kamera & GPS sudah "hangat" ──────────
-// requestAccess() dari useCameraGPS (di-warm-up sejak layar ini mount) —
-// kalau kamera & GPS sudah siap, ini langsung buka file input tanpa nunggu.
-const CameraCaptureSingle = ({ label, onFoto, foto, errorFoto, onPreview, requestAccess }) => {
+// ── CameraCapture — 1 foto per temuan ────────────────────────────────────────
+// requestAccess() dari useCameraGPS (di-warm-up sejak layar ini mount).
+const CameraCapture = ({ onFile, fotoUrl, onRemove, errorFoto, onPreview, requestAccess }) => {
   const [capState, setCapState] = useState("idle");
   const [permErr,  setPermErr]  = useState(null);
-  const fileInputRef = useRef(null);
-  const cachedPosRef  = useRef(null);
+  const fileRef = useRef(null);
+  const cachedPosRef = useRef(null);
 
-  const handleCaptureClick = async () => {
+  const handleClick = async () => {
     setPermErr(null);
     setCapState("checking");
     try {
       cachedPosRef.current = await requestAccess();
       setCapState("idle");
-      fileInputRef.current?.click();
+      fileRef.current?.click();
     } catch {
       setCapState("idle");
       setPermErr("Izin kamera/lokasi diperlukan. Aktifkan di pengaturan browser.");
     }
   };
 
-  const handleFileChange = async (e) => {
-    const file = (e.target.files || [])[0];
-    if (!file) return;
+  const handleChange = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
     setCapState("processing");
     try {
-      const result = await uploadFoto(file, label.replace(/\s+/g, "_").toLowerCase(), cachedPosRef.current);
-      onFoto(result);
+      const result = await uploadFoto(files[0], cachedPosRef.current);
+      onFile(result);
     } catch (err) {
       alert("⚠️ " + err.message);
     } finally {
@@ -204,51 +188,37 @@ const CameraCaptureSingle = ({ label, onFoto, foto, errorFoto, onPreview, reques
     }
   };
 
-  const removeFoto = async () => {
-    if (foto?.path) await supabase.storage.from("foto-inspeksi").remove([foto.path]).catch(() => {});
-    onFoto(null);
-  };
-
   const isWorking = capState !== "idle";
-
   return (
-    <div>
+    <div style={{ marginBottom: 10 }}>
       <div style={{
-        border: `2px dashed ${errorFoto ? theme.danger : theme.border}`, borderRadius: 10, padding: "12px",
-        background: errorFoto ? theme.dangerLight : "transparent",
+        border: `2px dashed ${errorFoto ? theme.danger : theme.border}`,
+        borderRadius: 10, padding: "12px",
+        background: errorFoto ? theme.dangerLight : "transparent", textAlign: "center",
       }}>
-        {permErr && (
-          <div style={{ marginBottom: 8, padding: "6px 10px", borderRadius: 8, background: theme.dangerLight, color: theme.danger, fontSize: 12, fontWeight: 600 }}>
-            ⛔ {permErr}
-          </div>
-        )}
-        <input ref={fileInputRef} type="file" accept="image/*" capture="environment"
-          onChange={handleFileChange} style={{ display: "none" }} />
-        {foto ? (
-          <div style={{ padding: "8px 10px", background: theme.primaryLight, borderRadius: 8 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <img
-                src={foto.url}
-                alt={foto.name}
-                onClick={() => onPreview?.(foto.url)}
-                style={{ width: 42, height: 42, borderRadius: 6, objectFit: "cover", cursor: "pointer", border: `1px solid ${theme.primary}`, flexShrink: 0 }}
-              />
-              <div style={{ flex: 1, fontSize: 12, color: theme.primary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                ✓ Foto dokumentasi tersimpan
-              </div>
-              <div onClick={() => onPreview?.(foto.url)} style={{ cursor: "pointer", fontSize: 12, color: theme.primary, fontWeight: 700, flexShrink: 0 }}>
-                🔍 Lihat
-              </div>
-              <div onClick={removeFoto} style={{ cursor: "pointer", fontWeight: 700, color: theme.danger, flexShrink: 0 }}>✕</div>
+        {fotoUrl ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 8px", background: theme.primaryLight, borderRadius: 8 }}>
+            <img
+              src={fotoUrl}
+              alt="Foto dokumentasi"
+              onClick={() => onPreview?.(fotoUrl)}
+              style={{ width: 44, height: 44, borderRadius: 6, objectFit: "cover", cursor: "pointer", flexShrink: 0, border: `1px solid ${theme.primary}` }}
+            />
+            <div onClick={() => onPreview?.(fotoUrl)} style={{ flex: 1, minWidth: 0, textAlign: "left", cursor: "pointer" }}>
+              <div style={{ fontSize: 12, color: theme.primary, fontWeight: 600 }}>✓ Tersimpan</div>
+              <div style={{ fontSize: 10.5, color: theme.textMuted }}>Ketuk untuk lihat penuh (cek blur)</div>
             </div>
+            <div onClick={onRemove} style={{ cursor: "pointer", fontWeight: 700, color: theme.danger, padding: "4px 8px", flexShrink: 0 }}>✕</div>
           </div>
         ) : (
-          <div style={{ textAlign: "center" }}>
+          <>
+            {permErr && <div style={{ fontSize: 11, color: theme.danger, fontWeight: 600, marginBottom: 8 }}>⛔ {permErr}</div>}
             <div style={{ fontSize: 11, color: theme.textMuted, marginBottom: 8 }}>📷 Kamera belakang · ⏱ Timestamp · 📍 GPS</div>
-            <Btn onClick={handleCaptureClick} variant="outline" style={{ padding: "7px 16px", fontSize: 12 }} disabled={isWorking}>
+            <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={handleChange} style={{ display: "none" }} />
+            <Btn onClick={handleClick} variant="outline" style={{ padding: "7px 16px", fontSize: 12 }} disabled={isWorking}>
               {capState === "checking" ? "🔐 Cek izin..." : capState === "processing" ? "⏳ Memproses..." : "📷 Ambil Foto"}
             </Btn>
-          </div>
+          </>
         )}
       </div>
       {errorFoto && <div style={{ fontSize: 11, color: theme.danger, fontWeight: 600, marginTop: 4 }}>⚠️ Foto wajib diambil.</div>}
@@ -260,7 +230,10 @@ const CameraCaptureSingle = ({ label, onFoto, foto, errorFoto, onPreview, reques
 const TemuanItem = ({ idx, item, onChange, onRemove, showRemove, onPreview, requestAccess }) => {
   const set = (k) => (v) => onChange(idx, k, v);
   const handleFile = (fd) => onChange(idx, "foto", fd);
-
+  const handleRemoveFoto = async () => {
+    if (item.foto?.path) await supabase.storage.from("foto-inspeksi").remove([item.foto.path]).catch(() => {});
+    onChange(idx, "foto", null);
+  };
   return (
     <div style={{ background: theme.surface, border: `1.5px solid ${theme.border}`, borderRadius: 14, padding: 16, marginBottom: 14 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
@@ -283,7 +256,6 @@ const TemuanItem = ({ idx, item, onChange, onRemove, showRemove, onPreview, requ
         value={item.judul}
         onChange={set("judul")}
       />
-      {item.errorJudul && <div style={{ fontSize: 11, color: theme.danger, fontWeight: 600, marginTop: -8, marginBottom: 10 }}>⚠️ Judul wajib diisi.</div>}
 
       <div style={{ marginBottom: 12 }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: theme.textSub, marginBottom: 6 }}>Keterangan Temuan</div>
@@ -302,11 +274,11 @@ const TemuanItem = ({ idx, item, onChange, onRemove, showRemove, onPreview, requ
         {item.errorKet && <div style={{ fontSize: 11, color: theme.danger, fontWeight: 600, marginTop: 4 }}>⚠️ Keterangan wajib diisi.</div>}
       </div>
 
-      <div style={{ fontSize: 13, fontWeight: 600, color: theme.textSub, marginBottom: 6 }}>Foto Dokumentasi (wajib)</div>
-      <CameraCaptureSingle
-        label={`Foto Temuan ${idx + 1}`}
-        onFoto={handleFile}
-        foto={item.foto}
+      <div style={{ fontSize: 13, fontWeight: 600, color: theme.textSub, marginBottom: 6 }}>Foto Dokumentasi</div>
+      <CameraCapture
+        onFile={handleFile}
+        fotoUrl={item.foto?.url || null}
+        onRemove={handleRemoveFoto}
         errorFoto={item.errorFoto || false}
         onPreview={onPreview}
         requestAccess={requestAccess}
@@ -320,52 +292,47 @@ const P1FormScreen = ({ onBack, onNav }) => {
   const [step,        setStep]        = useState(1); // 1=Kendaraan, 2=Temuan
   const [currentUser, setCurrentUser] = useState(null);
   const [submitting,  setSubmitting]  = useState(false);
+  const [previewUrl,  setPreviewUrl]  = useState(null);
 
-  // GPS/kamera di-"hangat"-kan sejak layar formulir ini dibuka — supaya saat
-  // user sampai di step foto, izin & posisi GPS sudah siap dan foto langsung
-  // terasa instan, bukan menunggu fix GPS baru tiap kali (sama seperti HSEFormScreen).
+  // Kamera/GPS di-"hangat"-kan sejak layar ini dibuka — sama seperti HSEFormScreen
   const { warmUp, coolDown, requestAccess } = useCameraGPS();
   useEffect(() => {
     warmUp();
     return () => coolDown();
   }, [warmUp, coolDown]);
 
-  const [previewUrl, setPreviewUrl] = useState(null);
-
-  // Data kendaraan — SEMUA dari database, tidak ada input manual lagi
   const [nopol,         setNopol]         = useState("");
-  const [kendaraanData, setKendaraanData] = useState(null); // hasil lookup lengkap
-  const [lookupStatus,  setLookupStatus]  = useState("idle"); // idle|loading|found|notfound
+  const [kendaraanData, setKendaraanData] = useState(null);
+  const [lookupStatus,  setLookupStatus]  = useState("idle");
   const lookupTimer = useRef(null);
 
-  // Temuan (dinamis)
   const [temuan, setTemuan] = useState([emptyTemuan()]);
 
-  // ── Cleanup foto "orphan" — kalau layar ini di-unmount (user keluar form)
-  // tanpa submit, foto yang sudah terlanjur ke-upload dihapus lagi dari storage
-  // supaya tidak nyangkut nyampah. Draft di localStorage tetap tersimpan terpisah;
-  // kalau user sempat submit, submittedRef mencegah cleanup ini berjalan.
-  const allFotoPaths = useRef([]);
-  const submittedRef = useRef(false);
-
-  useEffect(() => {
-    allFotoPaths.current = temuan.map((t) => t.foto?.path).filter(Boolean);
-  }, [temuan]);
-
-  useEffect(() => {
-    return () => {
-      if (!submittedRef.current && allFotoPaths.current.length > 0) {
-        supabase.storage.from("foto-inspeksi").remove(allFotoPaths.current).catch(console.error);
-      }
-    };
-  }, []);
-
-  // ── Draft persistence ───────────────────────────────────────────────────
   const [ready, setReady] = useState(false);
   const [showRestoreBanner, setShowRestoreBanner] = useState(false);
   const [draftExpiredNotice, setDraftExpiredNotice] = useState(false);
   const draftCreatedAtRef = useRef(null);
+  const submittedRef = useRef(false);
 
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => { if (user) setCurrentUser(user.id); });
+  }, []);
+
+  // Cleanup: layar ditinggalkan tanpa submit → foto yang sudah keburu
+  // diupload dihapus lagi dari storage. Draft TIDAK dihapus di sini (sama
+  // seperti HSEFormScreen) — biar tetap bisa dipulihkan kalau user balik lagi.
+  const temuanRef = useRef(temuan);
+  useEffect(() => { temuanRef.current = temuan; }, [temuan]);
+  useEffect(() => {
+    return () => {
+      if (!submittedRef.current) {
+        const paths = temuanRef.current.map((t) => t.foto?.path).filter(Boolean);
+        if (paths.length) supabase.storage.from("foto-inspeksi").remove(paths).catch(console.error);
+      }
+    };
+  }, []);
+
+  // ── Restore draft di awal (sekali) ─────────────────────────────────────
   useEffect(() => {
     const draft = loadDraft();
     if (draft) {
@@ -377,7 +344,7 @@ const P1FormScreen = ({ onBack, onNav }) => {
         setStep(draft.step || 1);
         setNopol(draft.nopol || "");
         setKendaraanData(draft.kendaraanData || null);
-        setLookupStatus(draft.lookupStatus || "idle");
+        setLookupStatus(draft.kendaraanData ? "found" : "idle");
         setTemuan(draft.temuan && draft.temuan.length ? draft.temuan : [emptyTemuan()]);
         draftCreatedAtRef.current = draft.createdAt || Date.now();
         setShowRestoreBanner(true);
@@ -386,14 +353,15 @@ const P1FormScreen = ({ onBack, onNav }) => {
     setReady(true);
   }, []);
 
+  // ── Simpan draft — hanya kalau ada progress beneran ─────────────────────
   useEffect(() => {
     if (!ready) return;
     const hasProgress =
       step > 1 || nopol.trim() || temuan.some((t) => t.judul.trim() || t.keterangan.trim() || t.foto);
     if (!hasProgress) { clearDraft(); draftCreatedAtRef.current = null; return; }
     if (!draftCreatedAtRef.current) draftCreatedAtRef.current = Date.now();
-    saveDraft({ createdAt: draftCreatedAtRef.current, step, nopol, kendaraanData, lookupStatus, temuan });
-  }, [ready, step, nopol, kendaraanData, lookupStatus, temuan]);
+    saveDraft({ createdAt: draftCreatedAtRef.current, step, nopol, kendaraanData, temuan });
+  }, [ready, step, nopol, kendaraanData, temuan]);
 
   const resetSemua = () => {
     clearDraft();
@@ -408,7 +376,7 @@ const P1FormScreen = ({ onBack, onNav }) => {
 
   const restoreBanner = showRestoreBanner && (
     <div style={{
-      margin: "0 16px 12px", padding: "10px 14px", borderRadius: 10,
+      margin: "0 0 16px", padding: "10px 14px", borderRadius: 10,
       background: "#FEF3C7", color: "#92400E", fontSize: 12, fontWeight: 600,
       display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
     }}>
@@ -431,7 +399,7 @@ const P1FormScreen = ({ onBack, onNav }) => {
 
   const expiredNotice = draftExpiredNotice && (
     <div style={{
-      margin: "0 16px 12px", padding: "10px 14px", borderRadius: 10,
+      margin: "0 0 16px", padding: "10px 14px", borderRadius: 10,
       background: theme.surfaceAlt, color: theme.textMuted, fontSize: 12, fontWeight: 600,
       display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
     }}>
@@ -440,11 +408,6 @@ const P1FormScreen = ({ onBack, onNav }) => {
     </div>
   );
 
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => { if (user) setCurrentUser(user.id); });
-  }, []);
-
-  // Auto-fill dari nomor polisi — lookup lengkap termasuk kategori_mt
   const handleNopolChange = useCallback((val) => {
     setNopol(val.toUpperCase());
     setKendaraanData(null);
@@ -467,7 +430,6 @@ const P1FormScreen = ({ onBack, onNav }) => {
     }, 600);
   }, []);
 
-  // Temuan handlers
   const updateTemuan = (idx, key, val) =>
     setTemuan(prev => prev.map((t, i) => i === idx ? { ...t, [key]: val } : t));
 
@@ -503,17 +465,10 @@ const P1FormScreen = ({ onBack, onNav }) => {
     return valid;
   };
 
-  // Submit — dipertahankan pola atomicity manual yang sama dengan HSEFormScreen:
-  // kalau insert temuan/foto gagal SETELAH baris inspeksi_p1 terlanjur terbuat,
-  // baris itu langsung dihapus lagi (rollback manual, bukan transaksi database
-  // asli). submittedRef baru diset true setelah SEMUA insert berhasil, supaya
-  // cleanup foto orphan (efek unmount) tetap jalan kalau submit gagal.
   const handleSubmit = async () => {
     if (!validateTemuan()) return;
     setSubmitting(true);
-    let inspData = null;
     try {
-      // Insert inspeksi_p1 — semua data kendaraan dari database (kendaraanData)
       const { data: insp, error: inspErr } = await supabase.from("inspeksi_p1").insert([{
         user_id: currentUser,
         nomor_polisi: nopol.trim().toUpperCase(),
@@ -526,37 +481,29 @@ const P1FormScreen = ({ onBack, onNav }) => {
         status: "baru",
       }]).select().single();
       if (inspErr) throw inspErr;
-      inspData = insp;
 
-      // Insert setiap temuan + foto
+      submittedRef.current = true;
+
       for (const t of temuan) {
         const { data: tv, error: tvErr } = await supabase.from("inspeksi_p1_temuan").insert([{
-          inspeksi_p1_id: inspData.id,
+          inspeksi_p1_id: insp.id,
           judul: t.judul,
           keterangan: t.keterangan,
         }]).select().single();
         if (tvErr) throw tvErr;
         if (t.foto?.url) {
-          const { error: fotoErr } = await supabase.from("foto_inspeksi_p1").insert([{
+          await supabase.from("foto_inspeksi_p1").insert([{
             temuan_id: tv.id,
             url: t.foto.url,
           }]);
-          if (fotoErr) throw fotoErr;
         }
       }
 
-      // Semua insert berhasil — baru sekarang dianggap benar-benar tersimpan.
-      submittedRef.current = true;
       clearDraft();
       alert("✓ Laporan cek random berhasil dikirim!");
       onNav("dashboard");
     } catch (err) {
-      // Rollback manual: kalau baris inspeksi_p1 sempat terbuat tapi data
-      // turunannya (temuan/foto) gagal, hapus lagi baris itu.
-      if (inspData?.id) {
-        await supabase.from("inspeksi_p1").delete().eq("id", inspData.id).catch(() => {});
-      }
-      alert("Gagal menyimpan: " + err.message + "\n\nData belum tersimpan. Silakan coba kirim ulang.");
+      alert("Gagal menyimpan: " + err.message);
     } finally {
       setSubmitting(false);
     }
@@ -572,7 +519,6 @@ const P1FormScreen = ({ onBack, onNav }) => {
           <Icon name="arrow" size={16} color={theme.textSub} /> Kembali
         </div>
         <div style={{ fontWeight: 800, fontSize: 18, color: theme.text, marginBottom: 16 }}>Pengecekan / Temuan</div>
-        {/* Step indicator */}
         <div style={{ display: "flex", alignItems: "center" }}>
           {STEPS.map((s, i) => (
             <div key={i} style={{ display: "flex", alignItems: "center", flex: i < STEPS.length - 1 ? 1 : 0 }}>
@@ -588,13 +534,11 @@ const P1FormScreen = ({ onBack, onNav }) => {
         </div>
       </div>
 
-      {restoreBanner}
-      {expiredNotice}
-
       {/* Content */}
       <div style={{ flex: 1, overflowY: "auto", padding: "20px 16px", paddingBottom: 90 }}>
+        {restoreBanner}
+        {expiredNotice}
 
-        {/* Step 1 — Data Kendaraan (readonly, auto-fill dari database) */}
         {step === 1 && (
           <>
             <SectionLabel>Data Kendaraan</SectionLabel>
@@ -627,7 +571,6 @@ const P1FormScreen = ({ onBack, onNav }) => {
           </>
         )}
 
-        {/* Step 2 — Form Temuan */}
         {step === 2 && (
           <>
             <SectionLabel>Form Temuan</SectionLabel>
@@ -646,7 +589,6 @@ const P1FormScreen = ({ onBack, onNav }) => {
               />
             ))}
 
-            {/* Tombol Tambah Pengecekan */}
             <div onClick={addTemuan} style={{
               display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
               padding: "14px", borderRadius: 12, border: `2px dashed #7C3AED`,
