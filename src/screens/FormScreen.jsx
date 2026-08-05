@@ -29,6 +29,12 @@ const clearDraft = () => {
 const initCctv = () => ({ status: "", segel_bricket: "", segel_kabel: "", ket_bricket: "", ket_kabel: "" });
 const initGps  = () => ({ status: "", segel: { status: "", ket: "" }, kabel: { status: "", ket: "" } });
 
+// Urutan step untuk perbandingan index di history/back navigation.
+// "ringkasan" adalah step tambahan setelah step 3 (CCTV) — bukan bagian
+// dari stepper bernomor 1/2/3 di header, sama seperti pola HSEFormScreen.
+const STEP_ORDER = [1, 2, 3, "ringkasan"];
+const stepIndex = (s) => STEP_ORDER.indexOf(s);
+
 // ── Helpers timestamp & GPS ───────────────────────────────────────────────────
 const decimalToDMS = (decimal, posDir, negDir) => {
   const dir = decimal >= 0 ? posDir : negDir;
@@ -54,7 +60,41 @@ const formatTanggal = (dateStr) => {
   return new Date(dateStr).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" });
 };
 
-// ── applyOverlay — sekarang resize dulu ke maks 1600px sebelum overlay,
+// ── Umur MT & sisa waktu masa berlaku — dihitung ULANG setiap render, sama
+// persis dengan pola di HSEFormScreen.jsx supaya angka konsisten di semua
+// tempat (Teknisi, HSE, admin) ────────────────────────────────────────────
+const diffYMD = (start, end) => {
+  let years = end.getFullYear() - start.getFullYear();
+  let months = end.getMonth() - start.getMonth();
+  let days = end.getDate() - start.getDate();
+  if (days < 0) {
+    months -= 1;
+    const prevMonthLastDay = new Date(end.getFullYear(), end.getMonth(), 0).getDate();
+    days += prevMonthLastDay;
+  }
+  if (months < 0) { years -= 1; months += 12; }
+  return { years, months, days };
+};
+
+const calcUmurMT = (tanggalStnk) => {
+  if (!tanggalStnk) return null;
+  const start = new Date(tanggalStnk);
+  if (isNaN(start.getTime())) return null;
+  const { years, months, days } = diffYMD(start, new Date());
+  return `${years} Tahun, ${months} Bulan, ${days} Hari`;
+};
+
+// null kalau tanggal sudah lewat (kadaluarsa ditangani terpisah oleh cekMasaBerlaku)
+const calcSisaWaktu = (tanggalTarget) => {
+  if (!tanggalTarget) return null;
+  const target = new Date(tanggalTarget);
+  const now = new Date();
+  if (isNaN(target.getTime()) || target <= now) return null;
+  const { years, months, days } = diffYMD(now, target);
+  return `${years} Tahun, ${months} Bulan, ${days} Hari`;
+};
+
+// ── applyOverlay — resize dulu ke maks 1600px sebelum overlay,
 // supaya upload lebih ringan & cepat (sama seperti pola HSEFormScreen) ───────
 const applyOverlay = async (file, pos) => {
   let serverTime = new Date();
@@ -292,6 +332,33 @@ const StatusAktifWithFoto = ({ label, status, onStatus, kategori, onPhotos, allP
   </div>
 );
 
+// ── Baris ringkasan untuk 1 item cek (dipakai di layar Ringkasan) ────────────
+const RingkasanItemRow = ({ label, status, ket, kategori, allPhotos, onPreview, isAktifToggle }) => {
+  const foto = allPhotos.find((p) => p.kategori === kategori);
+  const isNormalLike = isAktifToggle ? status === "Aktif" : status === "Normal";
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderBottom: `1px solid ${theme.border}`, gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flex: 1 }}>
+        {foto && (
+          <img src={foto.url} alt={label} onClick={() => onPreview?.(foto.url)}
+            style={{ width: 32, height: 32, borderRadius: 6, objectFit: "cover", cursor: "pointer", flexShrink: 0 }} />
+        )}
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 12, color: theme.text, fontWeight: 600 }}>{label}</div>
+          {ket && <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 1 }}>{ket}</div>}
+        </div>
+      </div>
+      <div style={{
+        fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, flexShrink: 0,
+        background: isNormalLike ? theme.successLight : theme.dangerLight,
+        color: isNormalLike ? theme.success : theme.danger,
+      }}>
+        {status || "-"}
+      </div>
+    </div>
+  );
+};
+
 const FormScreen = ({ onBack, onNav }) => {
   const [step, setStep] = useState(1);
   const [currentUser, setCurrentUser] = useState(null);
@@ -302,6 +369,9 @@ const FormScreen = ({ onBack, onNav }) => {
   const [previewUrl, setPreviewUrl] = useState(null);
   const lookupTimer = useRef(null);
   const submittedRef = useRef(false);
+
+  // Riwayat pengecekan GPS/CCTV sebelumnya untuk kendaraan yang dicari (3 terakhir)
+  const [riwayatSebelumnya, setRiwayatSebelumnya] = useState([]);
 
   // Kamera/GPS di-"hangat"-kan sejak layar ini dibuka — sama seperti HSEFormScreen
   const { warmUp, coolDown, requestAccess } = useCameraGPS();
@@ -333,7 +403,9 @@ const FormScreen = ({ onBack, onNav }) => {
   useEffect(() => {
     const handlePopState = (e) => {
       const state = e.state;
-      if (state?.screen === "form" && state?.step && state.step < step) setStep(state.step);
+      if (state?.screen === "form" && state?.step !== undefined && stepIndex(state.step) < stepIndex(step)) {
+        setStep(state.step);
+      }
     };
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
@@ -377,6 +449,7 @@ const FormScreen = ({ onBack, onNav }) => {
         setCctv(draft.cctv || { dashcam: initCctv(), kanan: initCctv(), kiri: initCctv() });
         setSegelKotakSekring(draft.segelKotakSekring || "");
         setPhotos(draft.photos || []);
+        setRiwayatSebelumnya(draft.riwayatSebelumnya || []);
         draftCreatedAtRef.current = draft.createdAt || Date.now();
         setShowRestoreBanner(true);
       }
@@ -385,14 +458,16 @@ const FormScreen = ({ onBack, onNav }) => {
   }, []);
 
   // ── Simpan draft — hanya kalau ada progress beneran, dan expire timestamp
-  // hanya di-set sekali di awal progress (sama seperti HSEFormScreen) ──────
+  // hanya di-set sekali di awal progress (sama seperti HSEFormScreen). Riwayat
+  // sebelumnya ikut disimpan supaya tidak perlu ketik ulang nomor polisi untuk
+  // memicu lookup lagi kalau app ke-close di tengah isi form. ────────────────
   useEffect(() => {
     if (!ready) return;
-    const hasProgress = step > 1 || polisi.trim() || photos.length > 0;
+    const hasProgress = step !== 1 || polisi.trim() || photos.length > 0;
     if (!hasProgress) { clearDraft(); draftCreatedAtRef.current = null; return; }
     if (!draftCreatedAtRef.current) draftCreatedAtRef.current = Date.now();
-    saveDraft({ createdAt: draftCreatedAtRef.current, step, polisi, kendaraanData, gps, cctv, segelKotakSekring, photos });
-  }, [ready, step, polisi, kendaraanData, gps, cctv, segelKotakSekring, photos]);
+    saveDraft({ createdAt: draftCreatedAtRef.current, step, polisi, kendaraanData, gps, cctv, segelKotakSekring, photos, riwayatSebelumnya });
+  }, [ready, step, polisi, kendaraanData, gps, cctv, segelKotakSekring, photos, riwayatSebelumnya]);
 
   const resetSemua = () => {
     clearDraft();
@@ -405,6 +480,7 @@ const FormScreen = ({ onBack, onNav }) => {
     setCctv({ dashcam: initCctv(), kanan: initCctv(), kiri: initCctv() });
     setSegelKotakSekring("");
     setPhotos([]);
+    setRiwayatSebelumnya([]);
     setShowRestoreBanner(false);
   };
 
@@ -442,10 +518,26 @@ const FormScreen = ({ onBack, onNav }) => {
     </div>
   );
 
+  // Cek ringan apakah satu baris riwayat inspeksi GPS/CCTV "Normal" secara keseluruhan
+  const isRiwayatNormal = (item) => {
+    const gpsNormal =
+      item.segel_gps?.toLowerCase() === "normal" &&
+      item.kabel_gps?.toLowerCase() === "normal";
+    const cctvNormal =
+      item.segel_bricket_dashcam?.toLowerCase() === "normal" &&
+      item.segel_kabel_dashcam?.toLowerCase() === "normal" &&
+      item.segel_bricket_kanan?.toLowerCase() === "normal" &&
+      item.segel_kabel_kanan?.toLowerCase() === "normal" &&
+      item.segel_bricket_kiri?.toLowerCase() === "normal" &&
+      item.segel_kabel_kiri?.toLowerCase() === "normal";
+    return gpsNormal && cctvNormal;
+  };
+
   const handlePolisiChange = useCallback((val) => {
     setPolisi(val.toUpperCase());
     setKendaraanData(null);
     setLookupStatus("idle");
+    setRiwayatSebelumnya([]);
     if (lookupTimer.current) clearTimeout(lookupTimer.current);
     if (!val.trim()) return;
     lookupTimer.current = setTimeout(async () => {
@@ -453,11 +545,24 @@ const FormScreen = ({ onBack, onNav }) => {
       try {
         const { data } = await supabase
           .from("kendaraan")
-          .select("nomor_polisi, transportir, kapasitas_mt, jumlah_kompartemen, kategori_mt, masa_berlaku_head_truck, masa_berlaku_tangki")
+          .select("nomor_polisi, transportir, kapasitas_mt, jumlah_kompartemen, kategori_mt, masa_berlaku_head_truck, masa_berlaku_tangki, tanggal_stnk")
           .eq("nomor_polisi", val.trim().toUpperCase())
           .maybeSingle();
-        if (data) { setKendaraanData(data); setLookupStatus("found"); }
-        else setLookupStatus("notfound");
+        if (data) {
+          setKendaraanData(data);
+          setLookupStatus("found");
+
+          // Riwayat pengecekan GPS/CCTV sebelumnya — 3 terakhir untuk kendaraan ini
+          const { data: riwayatData } = await supabase
+            .from("inspeksi")
+            .select("segel_gps, kabel_gps, segel_bricket_dashcam, segel_kabel_dashcam, segel_bricket_kanan, segel_kabel_kanan, segel_bricket_kiri, segel_kabel_kiri, status, created_at")
+            .eq("nomor_polisi", val.trim().toUpperCase())
+            .order("created_at", { ascending: false })
+            .limit(3);
+          setRiwayatSebelumnya(riwayatData || []);
+        } else {
+          setLookupStatus("notfound");
+        }
       } catch { setLookupStatus("notfound"); }
     }, 600);
   }, []);
@@ -471,6 +576,17 @@ const FormScreen = ({ onBack, onNav }) => {
   };
   const statusHeadTruck = cekMasaBerlaku(kendaraanData?.masa_berlaku_head_truck);
   const statusTangki    = cekMasaBerlaku(kendaraanData?.masa_berlaku_tangki);
+  const isKendaraanExpired = statusHeadTruck === "expired" || statusTangki === "expired";
+  const umurMT = calcUmurMT(kendaraanData?.tanggal_stnk);
+
+  const formatMasaBerlaku = (dateStr, status) => {
+    if (!dateStr) return "-";
+    const tgl = formatTanggal(dateStr);
+    if (status === "expired") return `❌ KADALUARSA — ${tgl}`;
+    const sisa = calcSisaWaktu(dateStr);
+    if (status === "warning") return `⚠️ Segera habis — ${tgl}${sisa ? ` (${sisa})` : ""}`;
+    return sisa ? `${tgl} (${sisa})` : tgl;
+  };
 
   const setGpsField = (field, key) => (val) => setGps((p) => ({ ...p, [field]: { ...p[field], [key]: val } }));
   const setCctvField = (cam, field) => (val) => setCctv((p) => ({ ...p, [cam]: { ...p[cam], [field]: val } }));
@@ -512,14 +628,34 @@ const FormScreen = ({ onBack, onNav }) => {
     if (!polisi.trim()) { alert("Nomor Polisi wajib diisi!"); return; }
     if (lookupStatus === "loading") { alert("Sedang mencari data kendaraan, tunggu sebentar..."); return; }
     if (lookupStatus === "notfound" || !kendaraanData) { alert("Nomor Polisi tidak ditemukan di database. Hubungi admin Depot untuk mendaftarkan kendaraan ini."); return; }
+    // Defense-in-depth: pengecekan cadangan kalau-kalau ada state aneh yang
+    // lolos dari disabled state tombol (sama seperti pola HSEFormScreen).
+    if (isKendaraanExpired) {
+      alert("Masa berlaku Head Truck/Tangki kendaraan ini sudah kedaluwarsa. Pengecekan tidak dapat dilanjutkan — hubungi admin untuk perpanjangan/registrasi ulang.");
+      return;
+    }
     setStep(2);
   };
 
-  const handleSubmit = async () => {
+  // Tombol di step 3 sekarang menuju layar RINGKASAN dulu, belum langsung kirim
+  const handleTinjau = () => {
     if (!validateStep3()) { alert("Lengkapi semua data CCTV dan foto dokumentasi!"); return; }
+    setStep("ringkasan");
+  };
+
+  // Submit sesungguhnya — dipanggil dari layar Ringkasan.
+  // Rollback manual: kalau insert foto_inspeksi gagal SETELAH baris inspeksi
+  // terlanjur terbuat, baris itu langsung dihapus lagi supaya tidak ada
+  // record "setengah jadi" yang nyangkut di database — sama seperti pola
+  // HSEFormScreen. submittedRef juga baru diset true setelah SEMUA insert
+  // berhasil, supaya cleanup foto orphan (efek unmount) tetap jalan kalau
+  // submit gagal dan user keluar dari layar ini.
+  const handleSubmit = async () => {
+    if (!validateStep3()) { alert("Lengkapi semua data CCTV dan foto dokumentasi!"); setStep(3); return; }
     setSubmitting(true);
+    let inspData = null;
     try {
-      const { data: inspData, error: inspErr } = await supabase.from("inspeksi").insert([{
+      const { data, error: inspErr } = await supabase.from("inspeksi").insert([{
         user_id: currentUser,
         nomor_polisi: polisi.trim().toUpperCase(),
         nama_pemeriksa: pemeriksa,
@@ -540,31 +676,137 @@ const FormScreen = ({ onBack, onNav }) => {
         is_submitted: true, submitted_at: new Date().toISOString(), status: "baru",
       }]).select().single();
       if (inspErr) throw inspErr;
-      submittedRef.current = true;
+      inspData = data;
+
       if (photos.length > 0) {
         const { error: fotoErr } = await supabase.from("foto_inspeksi").insert(
           photos.map((p) => ({ inspeksi_id: inspData.id, url: p.url, kategori: p.kategori, timestamp_foto: p.timestamp }))
         );
-        if (fotoErr) { alert("Laporan tersimpan, tapi foto gagal: " + fotoErr.message); clearDraft(); onNav("dashboard"); return; }
+        if (fotoErr) throw fotoErr;
       }
+
+      // Semua insert berhasil — baru sekarang dianggap benar-benar tersimpan.
+      submittedRef.current = true;
       clearDraft();
       alert("✅ Data berhasil disimpan & dikirim ke Depot!");
       onNav("dashboard");
     } catch (err) {
+      // Rollback manual: kalau baris inspeksi sempat terbuat tapi foto gagal
+      // diinsert, hapus lagi baris itu supaya tidak ada data setengah jadi.
+      if (inspData?.id) {
+        await supabase.from("inspeksi").delete().eq("id", inspData.id).catch(() => {});
+      }
       const paths = photos.map((p) => p.path).filter(Boolean);
       if (paths.length) await supabase.storage.from("foto-inspeksi").remove(paths).catch(console.error);
-      alert("Gagal menyimpan: " + err.message);
+      alert("Gagal menyimpan: " + err.message + "\n\nData belum tersimpan. Silakan coba kirim ulang.");
     } finally {
       setSubmitting(false);
     }
   };
 
   const steps = ["Kendaraan", "GPS", "CCTV"];
+  const stepNum = typeof step === "number" ? step : 4; // ringkasan dianggap "setelah" step 3 untuk keperluan progress
+
+  // Status keseluruhan (Normal/Abnormal) — dihitung dari state saat ini untuk
+  // ditampilkan di layar Ringkasan, sama seperti banner status di HSEFormScreen.
+  const overallNormal =
+    gps.segel.status === "Normal" && gps.kabel.status === "Normal" &&
+    cctv.dashcam.segel_bricket === "Normal" && cctv.dashcam.segel_kabel === "Normal" &&
+    cctv.kanan.segel_bricket === "Normal" && cctv.kanan.segel_kabel === "Normal" &&
+    cctv.kiri.segel_bricket === "Normal" && cctv.kiri.segel_kabel === "Normal";
+
+  // ── STEP RINGKASAN — tinjau ulang semua data sebelum benar-benar dikirim ───
+  if (step === "ringkasan") {
+    return (
+      <div style={{ minHeight: "100vh", background: theme.bg, display: "flex", flexDirection: "column" }}>
+        <div style={{ background: theme.surface, padding: "48px 16px 16px", borderBottom: `1px solid ${theme.border}`, boxShadow: theme.shadow }}>
+          <div onClick={() => window.history.back()} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, cursor: "pointer", color: theme.textSub, fontSize: 13 }}>
+            <Icon name="arrow" size={16} color={theme.textSub} /> Kembali & Edit
+          </div>
+          <div style={{ fontWeight: 800, fontSize: 18, color: theme.text }}>Ringkasan Sebelum Kirim</div>
+          <div style={{ fontSize: 13, color: theme.textMuted, marginTop: 2 }}>Periksa kembali semua data sebelum diunggah</div>
+        </div>
+
+        <div style={{ flex: 1, overflowY: "auto", padding: "20px 16px", paddingBottom: 100 }}>
+          {/* Status akhir */}
+          <div style={{
+            marginBottom: 16, padding: "14px 16px", borderRadius: 14, textAlign: "center",
+            background: overallNormal ? "#D1FAE5" : theme.dangerLight,
+            color: overallNormal ? theme.success : theme.danger,
+            fontWeight: 800, fontSize: 15,
+          }}>
+            {overallNormal ? "✅ SEMUA KONDISI NORMAL" : "⚠️ ADA KONDISI ABNORMAL"}
+          </div>
+
+          {/* Data kendaraan */}
+          <div style={{ marginBottom: 16, background: theme.surface, borderRadius: 14, padding: 16, border: `1px solid ${theme.border}` }}>
+            <SectionLabel>Data Kendaraan</SectionLabel>
+            <InfoRow label="Nomor Polisi" value={polisi} />
+            <InfoRow label="Transportir" value={kendaraanData?.transportir} />
+            <InfoRow label="Kapasitas MT" value={kendaraanData?.kapasitas_mt} />
+            <InfoRow label="Jumlah Kompartemen" value={kendaraanData?.jumlah_kompartemen ? `${kendaraanData.jumlah_kompartemen} kompartemen` : null} />
+            <InfoRow label="Pemeriksa" value={pemeriksa} />
+            {umurMT && <InfoRow label="Umur MT" value={umurMT} />}
+          </div>
+
+          {/* Ringkasan GPS */}
+          <div style={{ marginBottom: 16, background: theme.surface, borderRadius: 14, padding: 16, border: `1px solid ${theme.border}` }}>
+            <SectionLabel>Kondisi GPS</SectionLabel>
+            <RingkasanItemRow label="Status GPS" status={gps.status} kategori="gps_status" allPhotos={photos} onPreview={setPreviewUrl} isAktifToggle />
+            <RingkasanItemRow label="Segel GPS" status={gps.segel.status} ket={gps.segel.ket} kategori="gps_segel" allPhotos={photos} onPreview={setPreviewUrl} />
+            <RingkasanItemRow label="Kabel GPS" status={gps.kabel.status} ket={gps.kabel.ket} kategori="gps_kabel" allPhotos={photos} onPreview={setPreviewUrl} />
+          </div>
+
+          {/* Ringkasan CCTV */}
+          <div style={{ marginBottom: 16, background: theme.surface, borderRadius: 14, padding: 16, border: `1px solid ${theme.border}` }}>
+            <SectionLabel>CCTV Dashcam</SectionLabel>
+            <RingkasanItemRow label="Status CCTV Dashcam" status={cctv.dashcam.status} kategori="cctv_dashcam_status" allPhotos={photos} onPreview={setPreviewUrl} isAktifToggle />
+            <RingkasanItemRow label="Segel Bricket" status={cctv.dashcam.segel_bricket} ket={cctv.dashcam.ket_bricket} kategori="cctv_dashcam_bricket" allPhotos={photos} onPreview={setPreviewUrl} />
+            <RingkasanItemRow label="Segel Sambungan Kabel" status={cctv.dashcam.segel_kabel} ket={cctv.dashcam.ket_kabel} kategori="cctv_dashcam_kabel" allPhotos={photos} onPreview={setPreviewUrl} />
+          </div>
+
+          <div style={{ marginBottom: 16, background: theme.surface, borderRadius: 14, padding: 16, border: `1px solid ${theme.border}` }}>
+            <SectionLabel>CCTV Kanan</SectionLabel>
+            <RingkasanItemRow label="Status CCTV Kanan" status={cctv.kanan.status} kategori="cctv_kanan_status" allPhotos={photos} onPreview={setPreviewUrl} isAktifToggle />
+            <RingkasanItemRow label="Segel Bricket" status={cctv.kanan.segel_bricket} ket={cctv.kanan.ket_bricket} kategori="cctv_kanan_bricket" allPhotos={photos} onPreview={setPreviewUrl} />
+            <RingkasanItemRow label="Segel Sambungan Kabel" status={cctv.kanan.segel_kabel} ket={cctv.kanan.ket_kabel} kategori="cctv_kanan_kabel" allPhotos={photos} onPreview={setPreviewUrl} />
+          </div>
+
+          <div style={{ marginBottom: 16, background: theme.surface, borderRadius: 14, padding: 16, border: `1px solid ${theme.border}` }}>
+            <SectionLabel>CCTV Kiri</SectionLabel>
+            <RingkasanItemRow label="Status CCTV Kiri" status={cctv.kiri.status} kategori="cctv_kiri_status" allPhotos={photos} onPreview={setPreviewUrl} isAktifToggle />
+            <RingkasanItemRow label="Segel Bricket" status={cctv.kiri.segel_bricket} ket={cctv.kiri.ket_bricket} kategori="cctv_kiri_bricket" allPhotos={photos} onPreview={setPreviewUrl} />
+            <RingkasanItemRow label="Segel Sambungan Kabel" status={cctv.kiri.segel_kabel} ket={cctv.kiri.ket_kabel} kategori="cctv_kiri_kabel" allPhotos={photos} onPreview={setPreviewUrl} />
+          </div>
+
+          <div style={{ marginBottom: 16, background: theme.surface, borderRadius: 14, padding: 16, border: `1px solid ${theme.border}` }}>
+            <SectionLabel>Segel Kotak Sekring</SectionLabel>
+            <RingkasanItemRow label="Status Segel Kotak Sekring" status={segelKotakSekring} kategori="segel_kotak_sekring" allPhotos={photos} onPreview={setPreviewUrl} isAktifToggle />
+          </div>
+
+          <div style={{ fontSize: 12, color: theme.textMuted, textAlign: "center", marginTop: 4 }}>
+            Pastikan semua data sudah benar. Data tidak dapat diedit setelah dikirim.
+          </div>
+        </div>
+
+        <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 430, padding: "12px 16px", background: theme.surface, borderTop: `1px solid ${theme.border}`, display: "flex", gap: 10 }}>
+          <Btn onClick={() => window.history.back()} variant="ghost" style={{ flex: 1 }} disabled={submitting}>
+            ← Edit
+          </Btn>
+          <Btn onClick={handleSubmit} variant="primary" icon="check" style={{ flex: 2 }} disabled={submitting}>
+            {submitting ? "Mengirim..." : "✅ Kirim Sekarang"}
+          </Btn>
+        </div>
+
+        <PhotoLightbox url={previewUrl} onClose={() => setPreviewUrl(null)} />
+      </div>
+    );
+  }
 
   return (
     <div style={{ minHeight: "100vh", background: theme.bg, display: "flex", flexDirection: "column" }}>
       <div style={{ background: theme.surface, padding: "48px 16px 16px", borderBottom: `1px solid ${theme.border}`, boxShadow: theme.shadow }}>
-        <div onClick={() => { if (step > 1) window.history.back(); else onBack(); }} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, cursor: "pointer", color: theme.textSub, fontSize: 13 }}>
+        <div onClick={() => { if (stepNum > 1) window.history.back(); else onBack(); }} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, cursor: "pointer", color: theme.textSub, fontSize: 13 }}>
           <Icon name="arrow" size={16} color={theme.textSub} /> Kembali
         </div>
         <div style={{ fontWeight: 800, fontSize: 18, color: theme.text, marginBottom: 16 }}>Form Pengecekan</div>
@@ -572,12 +814,12 @@ const FormScreen = ({ onBack, onNav }) => {
           {steps.map((s, i) => (
             <div key={i} style={{ display: "flex", alignItems: "center", flex: i < steps.length - 1 ? 1 : 0 }}>
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                <div style={{ width: 28, height: 28, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: step > i+1 ? theme.success : step === i+1 ? theme.primary : theme.surfaceAlt, fontSize: 12, fontWeight: 700, color: step >= i+1 ? "#fff" : theme.textMuted }}>
-                  {step > i+1 ? <Icon name="check" size={13} color="#fff" /> : i+1}
+                <div style={{ width: 28, height: 28, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: stepNum > i+1 ? theme.success : stepNum === i+1 ? theme.primary : theme.surfaceAlt, fontSize: 12, fontWeight: 700, color: stepNum >= i+1 ? "#fff" : theme.textMuted }}>
+                  {stepNum > i+1 ? <Icon name="check" size={13} color="#fff" /> : i+1}
                 </div>
-                <div style={{ fontSize: 10, marginTop: 4, color: step === i+1 ? theme.primary : theme.textMuted, fontWeight: step === i+1 ? 700 : 400 }}>{s}</div>
+                <div style={{ fontSize: 10, marginTop: 4, color: stepNum === i+1 ? theme.primary : theme.textMuted, fontWeight: stepNum === i+1 ? 700 : 400 }}>{s}</div>
               </div>
-              {i < steps.length - 1 && <div style={{ flex: 1, height: 2, background: step > i+1 ? theme.success : theme.border, margin: "0 6px", marginBottom: 14 }} />}
+              {i < steps.length - 1 && <div style={{ flex: 1, height: 2, background: stepNum > i+1 ? theme.success : theme.border, margin: "0 6px", marginBottom: 14 }} />}
             </div>
           ))}
         </div>
@@ -605,18 +847,34 @@ const FormScreen = ({ onBack, onNav }) => {
                   <InfoRow label="Kapasitas MT" value={kendaraanData.kapasitas_mt} />
                   <InfoRow label="Jumlah Kompartemen" value={kendaraanData.jumlah_kompartemen ? `${kendaraanData.jumlah_kompartemen} kompartemen` : null} />
                   <InfoRow label="Kategori MT" value={kendaraanData.kategori_mt === "merah_putih" ? "MT Merah Putih" : kendaraanData.kategori_mt === "industri" ? "MT Industri" : kendaraanData.kategori_mt} />
+                  {umurMT && (
+                    <InfoRow label="Umur MT" value={`${umurMT} (STNK: ${formatTanggal(kendaraanData.tanggal_stnk)})`} />
+                  )}
                   <InfoRow
                     label="Masa Berlaku Head Truck"
-                    value={statusHeadTruck === "expired" ? `❌ KADALUARSA — ${formatTanggal(kendaraanData.masa_berlaku_head_truck)}` : statusHeadTruck === "warning" ? `⚠️ Segera habis — ${formatTanggal(kendaraanData.masa_berlaku_head_truck)}` : formatTanggal(kendaraanData.masa_berlaku_head_truck)}
+                    value={formatMasaBerlaku(kendaraanData.masa_berlaku_head_truck, statusHeadTruck)}
                     highlight={statusHeadTruck === "expired" || statusHeadTruck === "warning"}
                   />
                   <InfoRow
                     label="Masa Berlaku Tangki"
-                    value={statusTangki === "expired" ? `❌ KADALUARSA — ${formatTanggal(kendaraanData.masa_berlaku_tangki)}` : statusTangki === "warning" ? `⚠️ Segera habis — ${formatTanggal(kendaraanData.masa_berlaku_tangki)}` : formatTanggal(kendaraanData.masa_berlaku_tangki)}
+                    value={formatMasaBerlaku(kendaraanData.masa_berlaku_tangki, statusTangki)}
                     highlight={statusTangki === "expired" || statusTangki === "warning"}
                   />
                 </div>
               )}
+
+              {/* Peringatan & blokir kalau masa berlaku Head Truck/Tangki sudah lewat */}
+              {lookupStatus === "found" && isKendaraanExpired && (
+                <div style={{ marginBottom: 12, padding: "12px 14px", borderRadius: 10, background: theme.dangerLight, color: theme.danger, fontSize: 12, fontWeight: 700 }}>
+                  ⛔ {statusHeadTruck === "expired" && statusTangki === "expired"
+                    ? "Masa berlaku Head Truck dan Tangki kendaraan ini sudah kedaluwarsa."
+                    : statusHeadTruck === "expired"
+                      ? "Masa berlaku Head Truck kendaraan ini sudah kedaluwarsa."
+                      : "Masa berlaku Tangki kendaraan ini sudah kedaluwarsa."}
+                  {" "}Pengecekan tidak dapat dilanjutkan sampai diperbarui — hubungi admin untuk perpanjangan/registrasi ulang.
+                </div>
+              )}
+
               <div style={{ padding: "10px 12px", borderRadius: 10, background: theme.surfaceAlt, border: `1px solid ${theme.border}`, marginBottom: 12 }}>
                 <div style={{ fontSize: 11, color: theme.textMuted, marginBottom: 2 }}>Nama Pemeriksa</div>
                 <div style={{ fontSize: 14, fontWeight: 600, color: theme.text }}>{pemeriksa || "Memuat..."}</div>
@@ -626,6 +884,33 @@ const FormScreen = ({ onBack, onNav }) => {
                 📅 {new Date().toLocaleDateString("id-ID")} · 🕐 {new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
               </div>
             </div>
+
+            {/* Riwayat pengecekan sebelumnya — konteks untuk Teknisi sebelum cek ulang */}
+            {lookupStatus === "found" && riwayatSebelumnya.length > 0 && (
+              <div style={{ marginTop: 16, background: theme.surface, borderRadius: 14, padding: 16, border: `1px solid ${theme.border}` }}>
+                <SectionLabel>Riwayat Pengecekan Sebelumnya</SectionLabel>
+                {riwayatSebelumnya.map((r, i) => {
+                  const normal = isRiwayatNormal(r);
+                  return (
+                    <div key={i} style={{
+                      display: "flex", justifyContent: "space-between", alignItems: "center",
+                      padding: "8px 0", borderBottom: i < riwayatSebelumnya.length - 1 ? `1px solid ${theme.border}` : "none",
+                    }}>
+                      <div style={{ fontSize: 12, color: theme.textMuted }}>
+                        {new Date(r.created_at).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}
+                      </div>
+                      <div style={{
+                        fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20,
+                        background: normal ? theme.successLight : theme.dangerLight,
+                        color: normal ? theme.success : theme.danger,
+                      }}>
+                        {normal ? "✅ Normal" : "⚠️ Abnormal"}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </>
         )}
 
@@ -661,10 +946,10 @@ const FormScreen = ({ onBack, onNav }) => {
       </div>
 
       <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 430, padding: "12px 16px", background: theme.surface, borderTop: `1px solid ${theme.border}`, display: "flex", gap: 10 }}>
-        {step > 1 && <Btn onClick={() => window.history.back()} variant="ghost" style={{ flex: 0.5, padding: "12px", fontSize: 13 }} disabled={submitting}>← Kembali</Btn>}
-        {step === 1 && <Btn onClick={handleNextStep1} variant="primary" disabled={submitting || lookupStatus === "loading"}>Lanjut →</Btn>}
+        {stepNum > 1 && <Btn onClick={() => window.history.back()} variant="ghost" style={{ flex: 0.5, padding: "12px", fontSize: 13 }} disabled={submitting}>← Kembali</Btn>}
+        {step === 1 && <Btn onClick={handleNextStep1} variant="primary" disabled={submitting || lookupStatus === "loading" || isKendaraanExpired}>Lanjut →</Btn>}
         {step === 2 && <Btn onClick={() => { if (!validateStep2()) { alert("Lengkapi semua data GPS dan foto dokumentasi!"); return; } setStep(3); }} variant="primary" disabled={submitting}>Lanjut →</Btn>}
-        {step === 3 && <Btn onClick={handleSubmit} variant="primary" icon="check" disabled={submitting}>{submitting ? "Menyimpan..." : "Simpan & Kirim ke Depot"}</Btn>}
+        {step === 3 && <Btn onClick={handleTinjau} variant="primary" icon="check" disabled={submitting}>Tinjau & Kirim →</Btn>}
       </div>
 
       <PhotoLightbox url={previewUrl} onClose={() => setPreviewUrl(null)} />
