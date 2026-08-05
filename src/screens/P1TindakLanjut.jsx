@@ -6,7 +6,7 @@ import SectionLabel from "../components/SectionLabel";
 import theme from "../styles/theme";
 import { supabase } from "../lib/supabase";
 import { useCameraGPS } from "../hooks/useCameraGPS";
-import { useBackableView, goBack } from "../hooks/useBackableView";
+import { useBackableView } from "../hooks/useBackableView";
 
 // ── Draft persistence ─────────────────────────────────────────────────────────
 // Beda dari HSEFormScreen (form linear satu draft), di sini yang disimpan
@@ -116,38 +116,25 @@ const uploadFoto = async (file, kategori, pos) => {
   return { name: fileName, url: pub.publicUrl, path: data.path };
 };
 
-// ── PhotoLightbox — preview foto full-screen sebelum dikirim ──────────────────
+// ── PhotoLightbox — preview foto full-screen ──────────────────────────────────
 // Tombol back HP menutup lightbox ini (bukan langsung keluar dari layar) —
-// lihat useBackableView di hooks/useBackableView.js.
+// lihat useBackableView di hooks/useBackableView.js. Tidak ada tombol ✕ atau
+// tap-backdrop-untuk-menutup — satu-satunya jalan keluar adalah tombol
+// kembali bawaan HP.
 const PhotoLightbox = ({ url, onClose }) => {
   useBackableView(!!url, onClose);
 
   if (!url) return null;
   return (
     <div
-      onClick={() => goBack(onClose)}
       style={{
         position: "fixed", inset: 0, background: "rgba(0,0,0,0.92)", zIndex: 9999,
         display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
       }}
     >
-      <div
-        onClick={() => goBack(onClose)}
-        style={{
-          position: "absolute", top: 44, right: 20, color: "#fff", fontSize: 26,
-          fontWeight: 700, cursor: "pointer", width: 36, height: 36, borderRadius: 18,
-          background: "rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center",
-        }}
-      >
-        ✕
-      </div>
-      <div style={{ position: "absolute", top: 46, left: 20, color: "#fff", fontSize: 12, opacity: 0.8 }}>
-        Ketuk di mana saja untuk menutup
-      </div>
       <img
         src={url}
         alt="Preview foto"
-        onClick={(e) => e.stopPropagation()}
         style={{ maxWidth: "100%", maxHeight: "100%", borderRadius: 10, objectFit: "contain" }}
       />
     </div>
@@ -244,9 +231,6 @@ const CameraCaptureSingle = ({ label, onFoto, foto, errorFoto, onPreview, reques
 
 // ── Foto temuan ASLI dari P1FormScreen (bukan foto tindak lanjut) ────────────
 // Sumber: tabel foto_inspeksi_p1, direlasikan via temuan_id → inspeksi_p1_temuan.id
-// FIX BUG: sebelumnya foto ini sama sekali tidak diambil dari query maupun
-// dirender di TindakLanjutItem, jadi P1 (dan siapa pun yang menindaklanjuti)
-// tidak bisa melihat foto asli temuan yang dilaporkan.
 const TemuanFotoGrid = ({ fotoList, onPreview }) => {
   if (!fotoList || fotoList.length === 0) return null;
   return (
@@ -271,7 +255,7 @@ const TindakLanjutItem = ({ idx, temuan, tl, onChange, onPreview, requestAccess 
 
   return (
     <div style={{ background: theme.surface, border: `1.5px solid ${theme.border}`, borderRadius: 14, padding: 16, marginBottom: 14 }}>
-      {/* Temuan asli — sekarang termasuk foto dokumentasi temuan (fix bug) */}
+      {/* Temuan asli — termasuk foto dokumentasi temuan */}
       <div style={{ marginBottom: 12, padding: "10px 12px", background: theme.dangerLight, borderRadius: 10 }}>
         <div style={{ fontSize: 11, color: theme.danger, fontWeight: 700, marginBottom: 2 }}>📌 TEMUAN #{idx + 1}</div>
         <div style={{ fontWeight: 700, fontSize: 14, color: theme.text }}>{temuan.judul}</div>
@@ -388,10 +372,6 @@ const P1TindakLanjut = ({ onBack, onNav }) => {
     setLoading(true);
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setLoading(false); return; }
-    // FIX BUG: query sebelumnya hanya select inspeksi_p1_temuan(*), tidak
-    // pernah mengambil foto_inspeksi_p1 sama sekali. Sekarang di-nested
-    // supaya foto dokumentasi temuan ikut terbawa dan bisa dirender di
-    // TindakLanjutItem (lihat TemuanFotoGrid).
     const { data } = await supabase
       .from("inspeksi_p1")
       .select("*, inspeksi_p1_temuan(*, foto_inspeksi_p1(*))")
@@ -421,6 +401,13 @@ const P1TindakLanjut = ({ onBack, onNav }) => {
   const updateTL = (temuanId, key, val) =>
     setTL(prev => ({ ...prev, [temuanId]: { ...prev[temuanId], [key]: val } }));
 
+  // Simpan — sebelumnya SETIAP insert/update di loop ini tidak dicek error-nya
+  // sama sekali, jadi kalau salah satu gagal (mis. koneksi putus), kode tetap
+  // lanjut menganggap sukses tanpa memberi tahu user. Sekarang tiap langkah
+  // dicek, dan kalau ada yang gagal di tengah batch, semua perubahan yang
+  // SUDAH sempat terjadi pada batch ini (insert tindaklanjut_p1, update status
+  // temuan, update status inspeksi) dibatalkan lagi — supaya retry tidak
+  // menghasilkan data dobel atau status yang nyangkut salah.
   const handleSave = async () => {
     // Validasi — tindakan DAN foto wajib untuk setiap temuan
     let valid = true;
@@ -433,27 +420,43 @@ const P1TindakLanjut = ({ onBack, onNav }) => {
     if (!valid) { setTL(updated); alert("Lengkapi tindakan dan foto dokumentasi untuk setiap temuan!"); return; }
 
     setSaving(true);
+
+    const insertedTLIds = [];       // id baris tindaklanjut_p1 yang sempat ke-insert
+    const changedTemuanStatus = []; // { temuanId, prevStatus } yang sempat diubah
+    let prevInspStatus = null;
+    let inspStatusChanged = false;
+
     try {
       for (const [temuanId, t] of Object.entries(tl)) {
         // Insert tindak lanjut
-        await supabase.from("tindaklanjut_p1").insert([{
+        const { data: tlRow, error: tlErr } = await supabase.from("tindaklanjut_p1").insert([{
           inspeksi_id: selected.id,
           temuan_id: temuanId,
           catatan: t.catatan,
           foto_url: t.foto?.url || null,
           status: t.selesai ? "selesai" : "dikerjakan",
-        }]);
+        }]).select().single();
+        if (tlErr) throw tlErr;
+        insertedTLIds.push(tlRow.id);
+
         // Update status temuan kalau ditandai selesai
         if (t.selesai) {
-          await supabase.from("inspeksi_p1_temuan").update({ status: "selesai" }).eq("id", temuanId);
+          const prevStatus = temuanList.find((x) => x.id === temuanId)?.status ?? null;
+          const { error: updErr } = await supabase.from("inspeksi_p1_temuan").update({ status: "selesai" }).eq("id", temuanId);
+          if (updErr) throw updErr;
+          changedTemuanStatus.push({ temuanId, prevStatus });
         }
       }
 
       // Cek apakah semua temuan selesai → update inspeksi
-      const { data: allTemuan } = await supabase
+      const { data: allTemuan, error: allErr } = await supabase
         .from("inspeksi_p1_temuan").select("status").eq("inspeksi_id", selected.id);
+      if (allErr) throw allErr;
       if (allTemuan?.every(t => t.status === "selesai")) {
-        await supabase.from("inspeksi_p1").update({ status: "selesai" }).eq("id", selected.id);
+        prevInspStatus = selected.status ?? null;
+        const { error: inspErr } = await supabase.from("inspeksi_p1").update({ status: "selesai" }).eq("id", selected.id);
+        if (inspErr) throw inspErr;
+        inspStatusChanged = true;
       }
 
       clearDraft();
@@ -463,7 +466,17 @@ const P1TindakLanjut = ({ onBack, onNav }) => {
       setSelected(null);
       loadData();
     } catch (err) {
-      alert("Gagal menyimpan: " + err.message);
+      // Rollback manual — batalkan semua perubahan yang sempat terjadi di batch ini.
+      if (inspStatusChanged) {
+        await supabase.from("inspeksi_p1").update({ status: prevInspStatus }).eq("id", selected.id).catch(() => {});
+      }
+      for (const { temuanId, prevStatus } of changedTemuanStatus) {
+        await supabase.from("inspeksi_p1_temuan").update({ status: prevStatus }).eq("id", temuanId).catch(() => {});
+      }
+      if (insertedTLIds.length > 0) {
+        await supabase.from("tindaklanjut_p1").delete().in("id", insertedTLIds).catch(() => {});
+      }
+      alert("Gagal menyimpan: " + err.message + "\n\nData belum tersimpan (perubahan yang sempat terjadi sudah dibatalkan otomatis). Silakan coba simpan ulang.");
     } finally {
       setSaving(false);
     }
