@@ -6,7 +6,7 @@ import SectionLabel from "../components/SectionLabel";
 import theme from "../styles/theme";
 import { supabase } from "../lib/supabase";
 import { useCameraGPS } from "../hooks/useCameraGPS";
-import { useBackableView } from "../hooks/useBackableView";
+import { useBackableView, pushHistoryStep } from "../hooks/useBackableView";
 import sop1 from "../assets/acuan/01.png";
 import sop2 from "../assets/acuan/02.png";
 import sop3 from "../assets/acuan/03.png";
@@ -35,6 +35,11 @@ const CHECKPOINTS = [
   { menit: 25, label: "5 Menit Kelima (25 Menit)" },
   { menit: 30, label: "5 Menit Keenam (30 Menit)" },
 ];
+
+// Urutan step form — dipakai supaya tombol back HP mundur SATU langkah step
+// (bukan langsung keluar dari form), sama seperti FormScreen.jsx (Teknisi).
+// Lihat useEffect "step-history" di komponen HSEFormScreen di bawah.
+const STEP_ORDER = ["sop", "kendaraan", "kategori", "ujikedap", "ringkasan"];
 
 // ── Draft persistence (agar data tidak hilang kalau app ke-close / ke tombol home) ──
 const DRAFT_KEY = "hse_form_draft_v1";
@@ -437,6 +442,27 @@ const HSEFormScreen = ({ onBack, onNav }) => {
     return () => coolDown();
   }, [warmUp, coolDown]);
 
+  // ── Step-history: tombol back HP mundur SATU langkah step form ────────────
+  // (sop -> kendaraan -> kategori -> ujikedap -> ringkasan), bukan langsung
+  // keluar dari form — sama seperti FormScreen.jsx (Teknisi). Setiap kali
+  // step MAJU, satu entri history didorong (pushHistoryStep); balik satu step
+  // dipanggil otomatis lewat closeFn saat tombol back HP / window.history.back()
+  // menutup entri itu. Kalau sudah di step paling awal ("sop"), back HP
+  // diteruskan ke navigasi level atas (App.jsx) — keluar dari form, seperti
+  // sebelumnya (onBack prop dari App.jsx sudah berupa window.history.back()).
+  const stepIndexRef = useRef(STEP_ORDER.indexOf(step));
+  useEffect(() => {
+    const idx = STEP_ORDER.indexOf(step);
+    const prevIdx = stepIndexRef.current;
+    if (idx > prevIdx) {
+      for (let i = prevIdx; i < idx; i++) {
+        const stepBeforeThis = STEP_ORDER[i];
+        pushHistoryStep(() => setStep(stepBeforeThis));
+      }
+    }
+    stepIndexRef.current = idx;
+  }, [step]);
+
   // Lookup nomor polisi — data WAJIB dari database admin Pertamina, tidak bisa input manual
   const [lookupStatus, setLookupStatus] = useState("idle"); // idle | loading | found | notfound
   const lookupTimer = useRef(null);
@@ -825,7 +851,7 @@ const HSEFormScreen = ({ onBack, onNav }) => {
     return (
       <div style={{ minHeight: "100vh", background: theme.bg, display: "flex", flexDirection: "column" }}>
         <div style={{ background: theme.surface, padding: "48px 16px 16px", borderBottom: `1px solid ${theme.border}`, boxShadow: theme.shadow }}>
-          <div onClick={() => setStep("sop")} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, cursor: "pointer", color: theme.textSub, fontSize: 13 }}>
+          <div onClick={() => window.history.back()} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, cursor: "pointer", color: theme.textSub, fontSize: 13 }}>
             <Icon name="arrow" size={16} color={theme.textSub} /> Kembali
           </div>
           <div style={{ fontWeight: 800, fontSize: 18, color: theme.text }}>Data Kendaraan</div>
@@ -943,7 +969,7 @@ const HSEFormScreen = ({ onBack, onNav }) => {
     return (
       <div style={{ minHeight: "100vh", background: theme.bg, display: "flex", flexDirection: "column" }}>
         <div style={{ background: theme.surface, padding: "48px 16px 16px", borderBottom: `1px solid ${theme.border}`, boxShadow: theme.shadow }}>
-          <div onClick={() => setStep("kendaraan")} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, cursor: "pointer", color: theme.textSub, fontSize: 13 }}>
+          <div onClick={() => window.history.back()} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, cursor: "pointer", color: theme.textSub, fontSize: 13 }}>
             <Icon name="arrow" size={16} color={theme.textSub} /> Kembali
           </div>
           <div style={{ fontWeight: 800, fontSize: 18, color: theme.text }}>Kategori MT</div>
@@ -985,7 +1011,7 @@ const HSEFormScreen = ({ onBack, onNav }) => {
     return (
       <div style={{ minHeight: "100vh", background: theme.bg, display: "flex", flexDirection: "column" }}>
         <div style={{ background: theme.surface, padding: "48px 16px 16px", borderBottom: `1px solid ${theme.border}`, boxShadow: theme.shadow }}>
-          <div onClick={() => setStep("ujikedap")} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, cursor: "pointer", color: theme.textSub, fontSize: 13 }}>
+          <div onClick={() => window.history.back()} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, cursor: "pointer", color: theme.textSub, fontSize: 13 }}>
             <Icon name="arrow" size={16} color={theme.textSub} /> Kembali & Edit
           </div>
           <div style={{ fontWeight: 800, fontSize: 18, color: theme.text }}>Ringkasan Sebelum Kirim</div>
@@ -1059,7 +1085,7 @@ const HSEFormScreen = ({ onBack, onNav }) => {
         </div>
 
         <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 430, padding: "12px 16px", background: theme.surface, borderTop: `1px solid ${theme.border}`, display: "flex", gap: 10 }}>
-          <Btn onClick={() => setStep("ujikedap")} variant="ghost" style={{ flex: 1 }} disabled={submitting}>
+          <Btn onClick={() => window.history.back()} variant="ghost" style={{ flex: 1 }} disabled={submitting}>
             ← Edit
           </Btn>
           <Btn onClick={handleSubmit} variant="primary" icon="check" style={{ flex: 2 }} disabled={submitting}>
@@ -1076,7 +1102,7 @@ const HSEFormScreen = ({ onBack, onNav }) => {
   return (
     <div style={{ minHeight: "100vh", background: theme.bg, display: "flex", flexDirection: "column" }}>
       <div style={{ background: theme.surface, padding: "48px 16px 16px", borderBottom: `1px solid ${theme.border}`, boxShadow: theme.shadow }}>
-        <div onClick={() => setStep("kategori")} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, cursor: "pointer", color: theme.textSub, fontSize: 13 }}>
+        <div onClick={() => window.history.back()} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, cursor: "pointer", color: theme.textSub, fontSize: 13 }}>
           <Icon name="arrow" size={16} color={theme.textSub} /> Kembali
         </div>
         <div style={{ fontWeight: 800, fontSize: 18, color: theme.text }}>Uji Kedap — 6 kPa</div>

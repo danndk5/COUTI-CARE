@@ -54,3 +54,24 @@ export function goBack(fallbackFn) {
     fallbackFn();
   }
 }
+
+// ── pushHistoryStep ────────────────────────────────────────────────────────
+// Versi imperatif dari useBackableView, dipakai untuk alur MULTI-STEP linear
+// seperti form HSE/P1 (sop -> kendaraan -> kategori -> ujikedap -> ringkasan),
+// bukan modal on/off. Panggil sekali setiap kali step MAJU satu langkah;
+// closeFn akan dipanggil PERSIS SEKALI saat tombol back HP (atau
+// window.history.back() dari tombol "Kembali" versi UI) menutup langkah itu.
+//
+// Terintegrasi dengan stack global yang sama dipakai useBackableView, jadi
+// tetap benar walau ada tampilan lain (mis. lightbox foto) yang ditumpuk di
+// atas step form — 1x back cuma menutup yang paling atas dulu, baru langkah
+// berikutnya mundur ke step sebelumnya.
+//
+// PENTING: tombol "Kembali" versi UI untuk step form HARUS memanggil
+// window.history.back() (bukan langsung mengubah step), supaya jalurnya
+// konsisten dengan tombol back HP dan tidak menyisakan entri history yang
+// tidak sinkron.
+export function pushHistoryStep(closeFn) {
+  window.history.pushState({ __view: true }, "");
+  return pushInternalView(closeFn);
+}
