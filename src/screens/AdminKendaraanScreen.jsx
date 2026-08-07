@@ -311,6 +311,10 @@ const ImportModal = ({ onClose, onSaved }) => {
   const [rows, setRows] = useState([]);
   const [fileName, setFileName] = useState("");
   const [importing, setImporting] = useState(false);
+  const [checkingConflict, setCheckingConflict] = useState(false);
+  const [conflicts, setConflicts] = useState([]);       // [{nomor_polisi, existing, incoming}]
+  const [decisions, setDecisions] = useState({});        // { [nomor_polisi]: "ganti" | "pertahankan" }
+  const [reviewStep, setReviewStep] = useState(false);   // true kalau sudah cek konflik & siap review
   const [result, setResult] = useState(null);
   const fileInputRef = useRef(null);
 
@@ -336,6 +340,9 @@ const ImportModal = ({ onClose, onSaved }) => {
     if (!file) return;
     setFileName(file.name);
     setResult(null);
+    setReviewStep(false);
+    setConflicts([]);
+    setDecisions({});
 
     const reader = new FileReader();
     reader.onload = (evt) => {
@@ -382,31 +389,89 @@ const ImportModal = ({ onClose, onSaved }) => {
   const validRows = rows.filter((r) => r._errors.length === 0);
   const invalidRows = rows.filter((r) => r._errors.length > 0);
 
-  const handleImport = async () => {
+  // ── Langkah 1: cek nomor polisi mana yang sudah ada di database ─────────────
+  const handleCekDuplikat = async () => {
     if (validRows.length === 0) { alert("Tidak ada baris valid untuk diimport."); return; }
-    setImporting(true);
-
+    setCheckingConflict(true);
     try {
-      const payload = validRows.map((r) => ({
-        nomor_polisi: r.nomor_polisi,
-        nomor_lambung: r.nomor_lambung,
-        transportir: r.transportir,
-        kapasitas_mt: r.kapasitas_mt,
-        jumlah_kompartemen: r.jumlah_kompartemen,
-        kategori_mt: r.kategori_mt,
-        tanggal_stnk: r.tanggal_stnk,
-        masa_berlaku_head_truck: r.masa_berlaku_head_truck,
-        masa_berlaku_tangki: r.masa_berlaku_tangki,
-        updated_at: new Date().toISOString(),
-      }));
-
-      const { error } = await supabase
+      const plates = validRows.map((r) => r.nomor_polisi);
+      const { data: existingData, error } = await supabase
         .from("kendaraan")
-        .upsert(payload, { onConflict: "nomor_polisi" });
-
+        .select("*")
+        .in("nomor_polisi", plates);
       if (error) throw error;
 
-      setResult({ success: validRows.length, failed: invalidRows.length });
+      const existingMap = {};
+      (existingData || []).forEach((k) => { existingMap[k.nomor_polisi] = k; });
+
+      const conflictList = validRows
+        .filter((r) => existingMap[r.nomor_polisi])
+        .map((r) => ({
+          nomor_polisi: r.nomor_polisi,
+          existing: existingMap[r.nomor_polisi],
+          incoming: r,
+        }));
+
+      // Default keputusan: "ganti" untuk semua konflik (bisa diubah manual)
+      const defaultDecisions = {};
+      conflictList.forEach((c) => { defaultDecisions[c.nomor_polisi] = "ganti"; });
+
+      setConflicts(conflictList);
+      setDecisions(defaultDecisions);
+      setReviewStep(true);
+    } catch (err) {
+      alert("Gagal mengecek data: " + err.message);
+    } finally {
+      setCheckingConflict(false);
+    }
+  };
+
+  const setDecision = (plate, val) => setDecisions((p) => ({ ...p, [plate]: val }));
+  const setAllDecisions = (val) => {
+    const next = {};
+    conflicts.forEach((c) => { next[c.nomor_polisi] = val; });
+    setDecisions(next);
+  };
+
+  // ── Langkah 2: eksekusi import sesuai keputusan ──────────────────────────────
+  const handleImport = async () => {
+    setImporting(true);
+    try {
+      const conflictPlates = new Set(conflicts.map((c) => c.nomor_polisi));
+
+      // Baris yang diimport: semua baris baru (tidak konflik) + baris konflik yang dipilih "ganti"
+      const rowsToImport = validRows.filter((r) => {
+        if (!conflictPlates.has(r.nomor_polisi)) return true; // data baru, selalu masuk
+        return decisions[r.nomor_polisi] === "ganti";
+      });
+      const dipertahankanCount = conflicts.filter((c) => decisions[c.nomor_polisi] === "pertahankan").length;
+
+      if (rowsToImport.length > 0) {
+        const payload = rowsToImport.map((r) => ({
+          nomor_polisi: r.nomor_polisi,
+          nomor_lambung: r.nomor_lambung,
+          transportir: r.transportir,
+          kapasitas_mt: r.kapasitas_mt,
+          jumlah_kompartemen: r.jumlah_kompartemen,
+          kategori_mt: r.kategori_mt,
+          tanggal_stnk: r.tanggal_stnk,
+          masa_berlaku_head_truck: r.masa_berlaku_head_truck,
+          masa_berlaku_tangki: r.masa_berlaku_tangki,
+          updated_at: new Date().toISOString(),
+        }));
+
+        const { error } = await supabase
+          .from("kendaraan")
+          .upsert(payload, { onConflict: "nomor_polisi" });
+
+        if (error) throw error;
+      }
+
+      setResult({
+        success: rowsToImport.length,
+        failed: invalidRows.length,
+        dipertahankan: dipertahankanCount,
+      });
       onSaved();
     } catch (err) {
       alert("Gagal import: " + err.message);
@@ -425,11 +490,14 @@ const ImportModal = ({ onClose, onSaved }) => {
         maxHeight: "88vh", overflowY: "auto", padding: 20,
       }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-          <div style={{ fontWeight: 800, fontSize: 17, color: theme.text }}>Import dari Excel</div>
+          <div style={{ fontWeight: 800, fontSize: 17, color: theme.text }}>
+            {reviewStep && !result ? "Tinjau Data Bentrok" : "Import dari Excel"}
+          </div>
           <div onClick={onClose} style={{ cursor: "pointer", fontSize: 20, color: theme.textMuted }}>✕</div>
         </div>
 
-        {!result && (
+        {/* ── STEP 1: Pilih file ── */}
+        {!reviewStep && !result && (
           <>
             <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 14, lineHeight: 1.6 }}>
               Upload file Excel dengan kolom: <b>Nomor Lambung</b> (opsional), <b>Nomor Polisi</b>,
@@ -480,25 +548,109 @@ const ImportModal = ({ onClose, onSaved }) => {
                   </div>
                 )}
 
-                <Btn onClick={handleImport} variant="primary" disabled={importing || validRows.length === 0}>
-                  {importing ? "Mengimport..." : `Import ${validRows.length} Kendaraan`}
+                <Btn onClick={handleCekDuplikat} variant="primary" disabled={checkingConflict || validRows.length === 0}>
+                  {checkingConflict ? "Mengecek data..." : `Lanjutkan (${validRows.length} data)`}
                 </Btn>
               </>
             )}
           </>
         )}
 
+        {/* ── STEP 2: Review konflik (hanya kalau ada nomor polisi yang sudah ada) ── */}
+        {reviewStep && !result && (
+          <>
+            {conflicts.length === 0 ? (
+              <div style={{ fontSize: 13, color: theme.textMuted, marginBottom: 16 }}>
+                ✅ Semua {validRows.length} data adalah kendaraan baru — tidak ada yang bentrok dengan data yang sudah ada.
+              </div>
+            ) : (
+              <>
+                <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 12, lineHeight: 1.6 }}>
+                  Ditemukan <b>{conflicts.length} nomor polisi</b> yang sudah ada di database.
+                  Pilih untuk masing-masing: <b>Ganti</b> (timpa dengan data baru dari file)
+                  atau <b>Pertahankan</b> (biarkan data lama, abaikan data dari file).
+                </div>
+
+                <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+                  <Btn onClick={() => setAllDecisions("ganti")} variant="outline" style={{ flex: 1, fontSize: 12, padding: "8px" }}>
+                    Ganti Semua
+                  </Btn>
+                  <Btn onClick={() => setAllDecisions("pertahankan")} variant="outline" style={{ flex: 1, fontSize: 12, padding: "8px" }}>
+                    Pertahankan Semua
+                  </Btn>
+                </div>
+
+                <div style={{ maxHeight: 340, overflowY: "auto", marginBottom: 16 }}>
+                  {conflicts.map((c) => (
+                    <div key={c.nomor_polisi} style={{ marginBottom: 12, padding: 12, borderRadius: 10, background: theme.surfaceAlt, border: `1px solid ${theme.border}` }}>
+                      <div style={{ fontWeight: 700, fontSize: 13, color: theme.text, marginBottom: 8 }}>
+                        {c.nomor_polisi}
+                      </div>
+
+                      <div style={{ fontSize: 11, color: theme.textMuted, marginBottom: 4 }}>
+                        <b>Data lama:</b> {c.existing.transportir || "-"} · {c.existing.kapasitas_mt || "-"} · {c.existing.jumlah_kompartemen || "-"} kompartemen
+                      </div>
+                      <div style={{ fontSize: 11, color: theme.primary, marginBottom: 10 }}>
+                        <b>Data baru (Excel):</b> {c.incoming.transportir || "-"} · {c.incoming.kapasitas_mt || "-"} · {c.incoming.jumlah_kompartemen || "-"} kompartemen
+                      </div>
+
+                      <div style={{ display: "flex", gap: 8 }}>
+                        {["ganti", "pertahankan"].map((opt) => (
+                          <div
+                            key={opt}
+                            onClick={() => setDecision(c.nomor_polisi, opt)}
+                            style={{
+                              flex: 1, textAlign: "center", padding: "7px 0", borderRadius: 8,
+                              fontSize: 12, fontWeight: 600, cursor: "pointer",
+                              background: decisions[c.nomor_polisi] === opt ? theme.primary : theme.surface,
+                              color: decisions[c.nomor_polisi] === opt ? "#fff" : theme.textMuted,
+                              border: `1.5px solid ${decisions[c.nomor_polisi] === opt ? theme.primary : theme.border}`,
+                            }}
+                          >
+                            {opt === "ganti" ? "🔁 Ganti" : "🔒 Pertahankan"}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            <div style={{ display: "flex", gap: 8 }}>
+              <Btn onClick={() => setReviewStep(false)} variant="ghost" style={{ flex: 1 }} disabled={importing}>
+                ← Kembali
+              </Btn>
+              <Btn onClick={handleImport} variant="primary" style={{ flex: 2 }} disabled={importing}>
+                {importing ? "Mengimport..." : "Import Sekarang"}
+              </Btn>
+            </div>
+          </>
+        )}
+
+        {/* ── STEP 3: Hasil ── */}
         {result && (
           <div style={{ textAlign: "center", padding: "20px 0" }}>
             <div style={{ fontSize: 40, marginBottom: 12 }}>✅</div>
             <div style={{ fontSize: 16, fontWeight: 700, color: theme.text, marginBottom: 6 }}>
               Import Selesai
             </div>
-            <div style={{ fontSize: 13, color: theme.textMuted, marginBottom: 20 }}>
-              {result.success} kendaraan berhasil diimport
-              {result.failed > 0 && `, ${result.failed} baris dilewati karena error`}
+            <div style={{ fontSize: 13, color: theme.textMuted, marginBottom: 4 }}>
+              {result.success} data ditambahkan/diperbarui
             </div>
-            <Btn onClick={onClose} variant="primary">Selesai</Btn>
+            {result.dipertahankan > 0 && (
+              <div style={{ fontSize: 13, color: theme.textMuted, marginBottom: 4 }}>
+                {result.dipertahankan} data lama dipertahankan (tidak diubah)
+              </div>
+            )}
+            {result.failed > 0 && (
+              <div style={{ fontSize: 13, color: theme.textMuted, marginBottom: 4 }}>
+                {result.failed} baris dilewati karena error
+              </div>
+            )}
+            <div style={{ marginTop: 16 }}>
+              <Btn onClick={onClose} variant="primary">Selesai</Btn>
+            </div>
           </div>
         )}
       </div>
