@@ -147,6 +147,32 @@ const HealthMiniBar = ({ value, color }) => (
   </div>
 );
 
+// ── Tombol "Riwayat" scoped per kategori ─────────────────────────────────────
+// Dipakai di header list tiap tab (GPS/HSE/P1), pengganti menu "Riwayat"
+// generik yang sebelumnya ada di sidebar/bottom nav (dihapus dari
+// BottomNav.jsx — Agustus 2026). Tiap tombol sudah otomatis scoped ke
+// kategori tab yang sedang aktif, jadi tidak ada lagi ambiguitas kategori
+// mana yang dibuka.
+const RiwayatButton = ({ onClick, isDesktop }) => (
+  <div
+    onClick={onClick}
+    style={{
+      display: "flex", alignItems: "center", gap: 6, flexShrink: 0,
+      padding: isDesktop ? "9px 16px" : "7px 12px",
+      borderRadius: 10,
+      border: `1.5px solid ${theme.primary}`,
+      fontSize: isDesktop ? 13 : 12,
+      fontWeight: 700,
+      color: theme.primary,
+      cursor: "pointer",
+      whiteSpace: "nowrap",
+    }}
+  >
+    <Icon name="history" size={isDesktop ? 16 : 14} color={theme.primary} />
+    Riwayat
+  </div>
+);
+
 // ── Tab Bar ───────────────────────────────────────────────────────────────────
 const TAB_LIST = [
   { key: "gps",    label: "GPS & CCTV" },
@@ -192,9 +218,9 @@ const HEALTH_CATEGORY_COLORS = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TAB 1: GPS & CCTV (konten lama, tidak diubah)
+// TAB 1: GPS & CCTV (konten lama, tidak diubah — kecuali tombol Riwayat baru)
 // ─────────────────────────────────────────────────────────────────────────────
-const TabGPS = ({ onOpenDetail, onOpenKategori, isDesktop, onCountChange, onOverdueChange }) => {
+const TabGPS = ({ onOpenDetail, onOpenKategori, onOpenRiwayat, isDesktop, onCountChange, onOverdueChange }) => {
   const [inspeksiList, setInspeksiList] = useState([]);
   const [stats, setStats] = useState({ total: 0, normal: 0, abnormal: 0, selesai: 0 });
   const [loading, setLoading] = useState(true);
@@ -370,7 +396,10 @@ const TabGPS = ({ onOpenDetail, onOpenKategori, isDesktop, onCountChange, onOver
         ))}
       </FilterPillsRow>
 
-      <SectionLabel>Daftar Laporan GPS & CCTV</SectionLabel>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <SectionLabel style={{ margin: 0 }}>Daftar Laporan GPS & CCTV</SectionLabel>
+        <RiwayatButton onClick={onOpenRiwayat} isDesktop={isDesktop} />
+      </div>
       {filteredList.length > 0 ? (
         <div style={{ display: "grid", gridTemplateColumns: isDesktop ? "repeat(auto-fill, minmax(300px, 1fr))" : "1fr", gap: isDesktop ? DESKTOP_GRID_GAP : 0 }}>
           {filteredList.map((item) => (
@@ -429,7 +458,7 @@ const TabGPS = ({ onOpenDetail, onOpenKategori, isDesktop, onCountChange, onOver
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB 2: Uji Kedap MT (data dari inspeksi_hse, semua akun HSE)
 // ─────────────────────────────────────────────────────────────────────────────
-const TabHSE = ({ isDesktop, onOpenDetail, onCountChange }) => {
+const TabHSE = ({ isDesktop, onOpenDetail, onOpenRiwayat, onCountChange }) => {
   const [list, setList]       = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState(null);
@@ -626,13 +655,16 @@ const TabHSE = ({ isDesktop, onOpenDetail, onCountChange }) => {
         ))}
       </FilterPillsRow>
 
-      {/* Label filter aktif */}
+      {/* Label filter aktif + tombol Riwayat */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", rowGap: 4 }}>
         <SectionLabel style={{ margin: 0 }}>
           Daftar Laporan Uji Kedap MT
           {activeFilterLabel && <span style={{ fontSize: 12, fontWeight: 600, color: "#D97706", marginLeft: 8 }}>{activeFilterLabel}</span>}
         </SectionLabel>
-        <div style={{ fontSize: 12, color: theme.textMuted }}>{filteredList.length} laporan</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <div style={{ fontSize: 12, color: theme.textMuted }}>{filteredList.length} laporan</div>
+          <RiwayatButton onClick={onOpenRiwayat} isDesktop={isDesktop} />
+        </div>
       </div>
 
       {filteredList.length > 0 ? (
@@ -687,7 +719,7 @@ const TabHSE = ({ isDesktop, onOpenDetail, onCountChange }) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB 3: Cek Random P1 (data dari inspeksi_p1, semua akun P1)
 // ─────────────────────────────────────────────────────────────────────────────
-const TabP1 = ({ isDesktop, onOpenDetail, onCountChange }) => {
+const TabP1 = ({ isDesktop, onOpenDetail, onOpenRiwayat, onCountChange }) => {
   const [list, setList]       = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState(null);
@@ -835,7 +867,10 @@ const TabP1 = ({ isDesktop, onOpenDetail, onCountChange }) => {
         ))}
       </FilterPillsRow>
 
-      <SectionLabel>Daftar Laporan Cek Random P1</SectionLabel>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <SectionLabel style={{ margin: 0 }}>Daftar Laporan Cek Random P1</SectionLabel>
+        <RiwayatButton onClick={onOpenRiwayat} />
+      </div>
       {filteredList.length > 0 ? (
         <div style={{ display: "grid", gridTemplateColumns: isDesktop ? "repeat(auto-fill, minmax(300px, 1fr))" : "1fr", gap: isDesktop ? DESKTOP_GRID_GAP : 0 }}>
           {filteredList.map((item) => {
@@ -982,6 +1017,7 @@ const PertaminaDashboard = ({ onNav, onLogout, onOpenDetail, onOpenKategori, onO
         <TabGPS
           onOpenDetail={onOpenDetail}
           onOpenKategori={onOpenKategori}
+          onOpenRiwayat={() => onNav("history")}
           isDesktop={isDesktop}
           onCountChange={(n) => setTabCounts((p) => ({ ...p, gps: n }))}
           onOverdueChange={setOverdueCount}
@@ -991,6 +1027,7 @@ const PertaminaDashboard = ({ onNav, onLogout, onOpenDetail, onOpenKategori, onO
         <TabHSE
           isDesktop={isDesktop}
           onOpenDetail={onOpenDetailHSE}
+          onOpenRiwayat={() => onNav("history")}
           onCountChange={(n) => setTabCounts((p) => ({ ...p, hse: n }))}
         />
       )}
@@ -998,6 +1035,7 @@ const PertaminaDashboard = ({ onNav, onLogout, onOpenDetail, onOpenKategori, onO
         <TabP1
           isDesktop={isDesktop}
           onOpenDetail={onOpenDetailP1}
+          onOpenRiwayat={() => onNav("history")}
           onCountChange={(n) => setTabCounts((p) => ({ ...p, p1: n }))}
         />
       )}

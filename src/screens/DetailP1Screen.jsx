@@ -5,6 +5,7 @@ import SectionLabel from "../components/SectionLabel";
 import theme from "../styles/theme";
 import { supabase } from "../lib/supabase";
 import { formatDate, formatTime } from "../lib/dateHelper";
+import { useBackableView } from "../hooks/useBackableView";
 
 // ─── Sub-komponen ────────────────────────────────────────────────────────────
 
@@ -17,7 +18,29 @@ const InfoRow = ({ label, value }) => (
   </div>
 );
 
-const TemuanRow = ({ temuan }) => (
+// ⚠️ FIX (Agustus 2026): sebelumnya foto temuan tidak pernah diambil sama
+// sekali dari query (hanya id/judul/keterangan yang di-select), jadi foto
+// yang sudah ada di storage & tabel `foto_inspeksi_p1` tidak pernah punya
+// kesempatan untuk dirender di layar ini. Grid ini mengikuti pola
+// TemuanFotoGrid di P1TindakLanjut.jsx: grid 3 kolom, klik foto → lightbox.
+const TemuanFotoGrid = ({ fotoList, onPreview }) => {
+  if (!fotoList || fotoList.length === 0) return null;
+  return (
+    <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+      {fotoList.map((f) => (
+        <img
+          key={f.id}
+          src={f.url}
+          alt="Foto temuan"
+          onClick={() => onPreview?.(f.url)}
+          style={{ width: "100%", height: 80, objectFit: "cover", borderRadius: 8, cursor: "pointer", border: `1px solid ${theme.border}` }}
+        />
+      ))}
+    </div>
+  );
+};
+
+const TemuanRow = ({ temuan, onPreview }) => (
   <div
     style={{
       padding: "12px 14px",
@@ -34,8 +57,44 @@ const TemuanRow = ({ temuan }) => (
         {temuan.keterangan}
       </div>
     )}
+    <TemuanFotoGrid fotoList={temuan.foto_inspeksi_p1} onPreview={onPreview} />
   </div>
 );
+
+// ─── Lightbox ────────────────────────────────────────────────────────────────
+// Pola sama dengan PhotoLightbox di P1TindakLanjut.jsx (back HP menutup
+// lightbox via useBackableView), TAPI beda dari file itu: di sini tombol ❌
+// tetap dipertahankan (default untuk semua form/layar lain), karena dashboard
+// ini banyak diakses dari laptop yang tidak punya tombol back fisik.
+const PhotoLightbox = ({ url, onClose }) => {
+  useBackableView(!!url, onClose);
+
+  if (!url) return null;
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, background: "rgba(0,0,0,0.92)", zIndex: 9999,
+        display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
+      }}
+    >
+      <div
+        onClick={onClose}
+        style={{
+          position: "absolute", top: 16, right: 16, width: 36, height: 36, borderRadius: 18,
+          background: "rgba(255,255,255,0.15)", color: "#fff", fontSize: 18, fontWeight: 700,
+          display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
+        }}
+      >
+        ✕
+      </div>
+      <img
+        src={url}
+        alt="Preview foto"
+        style={{ maxWidth: "100%", maxHeight: "100%", borderRadius: 10, objectFit: "contain" }}
+      />
+    </div>
+  );
+};
 
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 
@@ -44,15 +103,18 @@ const DetailP1Screen = ({ p1Id, onBack }) => {
   const [temuanList, setTemuanList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(null);
 
   const loadDetail = useCallback(async () => {
     setLoading(true);
     setError(null);
 
     try {
+      // FIX: nested sampai foto_inspeksi_p1, bukan cuma id/judul/keterangan —
+      // itu sebabnya foto temuan P1 tidak pernah muncul di layar ini.
       const { data: p1Data, error: p1Error } = await supabase
         .from("inspeksi_p1")
-        .select("*, inspeksi_p1_temuan(id, judul, keterangan)")
+        .select("*, inspeksi_p1_temuan(*, foto_inspeksi_p1(*))")
         .eq("id", p1Id)
         .single();
 
@@ -97,20 +159,9 @@ const DetailP1Screen = ({ p1Id, onBack }) => {
     );
   }
 
-  // ⚠️ PENTING — bug fix (Agustus 2026):
-  // Sebelumnya badge cek data.status === "selesai", tapi nilai kolom
-  // `status` di tabel inspeksi_p1 tidak konsisten/tidak jelas asalnya
-  // (tidak ada P1FormScreen.jsx yang bisa dipastikan nilainya). Akibatnya
-  // laporan yang temuannya kosong pun tetap tampil "Perlu Tindak Lanjut".
-  //
-  // Sumber kebenaran yang lebih dapat diandalkan adalah data temuan itu
-  // sendiri: kalau tidak ada temuan sama sekali (temuanList kosong),
-  // berarti tidak ada yang perlu ditindaklanjuti — apapun nilai
-  // data.status. Kalau nanti P1FormScreen.jsx sudah pasti menyimpan
-  // status yang benar (misalnya "selesai" setelah ditindaklanjuti),
-  // logika ini bisa disesuaikan lagi supaya tetap menghormati status
-  // "sudah ditindaklanjuti" secara manual oleh P1, bukan cuma jumlah
-  // temuan mentah.
+  // Sumber kebenaran: data temuan itu sendiri. Kalau tidak ada temuan sama
+  // sekali (temuanList kosong), berarti tidak ada yang perlu ditindaklanjuti
+  // — apapun nilai data.status. (Tidak diubah — sudah diverifikasi benar.)
   const belumAdaTemuan = temuanList.length === 0;
   const isSelesai = belumAdaTemuan || data.status === "selesai";
   const kategoriLabel = data.kategori_mt === "merah_putih" ? "MT Merah Putih" : "MT Industri";
@@ -166,13 +217,15 @@ const DetailP1Screen = ({ p1Id, onBack }) => {
         {/* Temuan */}
         <SectionLabel>Temuan ({temuanList.length})</SectionLabel>
         {temuanList.length > 0 ? (
-          temuanList.map((t) => <TemuanRow key={t.id} temuan={t} />)
+          temuanList.map((t) => <TemuanRow key={t.id} temuan={t} onPreview={setPreviewUrl} />)
         ) : (
           <Card style={{ padding: "20px 16px", textAlign: "center" }}>
             <div style={{ fontSize: 13, color: theme.textMuted }}>✓ Tidak ada temuan</div>
           </Card>
         )}
       </div>
+
+      <PhotoLightbox url={previewUrl} onClose={() => setPreviewUrl(null)} />
     </div>
   );
 };

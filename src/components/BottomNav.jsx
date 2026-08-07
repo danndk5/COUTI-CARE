@@ -43,10 +43,14 @@ const NAV_ITEMS = {
     { id: "form",           label: "Pengecekan",     icon: "plus",  center: true },
     { id: "tindak-lanjut",  label: "Tindak Lanjut",  icon: "wrench" },
   ],
-  // Beranda | Riwayat | Maintenance
+  // Beranda | Maintenance
+  // (Riwayat sengaja dihapus dari menu generik — Agustus 2026: tiap tab
+  // laporan (GPS/HSE/P1) di PertaminaDashboard sekarang punya tombol
+  // "Riwayat" sendiri yang otomatis scoped ke kategori tab itu, jadi
+  // menu Riwayat generik yang defaultnya ambigu ke satu kategori ini
+  // dihapus supaya tidak membingungkan.)
   depot: [
     { id: "dashboard",   label: "Beranda",     icon: "home"    },
-    { id: "history",     label: "Riwayat",     icon: "history" },
     { id: "maintenance", label: "Maintenance", icon: "wrench"  },
   ],
   // Beranda | Pengecekan | Tindak Lanjut
