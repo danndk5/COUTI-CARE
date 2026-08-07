@@ -302,11 +302,53 @@ const TindakLanjutItem = ({ idx, temuan, tl, onChange, onPreview, requestAccess 
   );
 };
 
+// ── Ringkasan Item — versi ringkas (read-only) dari TindakLanjutItem, dipakai
+//    di layar Ringkasan Sebelum Kirim ──────────────────────────────────────────
+const RingkasanItem = ({ idx, temuan, tl, onPreview }) => (
+  <div style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 14, padding: 16, marginBottom: 14 }}>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: theme.text }}>Temuan #{idx + 1}</div>
+      <div style={{
+        fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20,
+        background: tl.selesai ? theme.successLight : theme.surfaceAlt,
+        color: tl.selesai ? theme.success : theme.textMuted,
+      }}>
+        {tl.selesai ? "✓ Selesai" : "Dikerjakan"}
+      </div>
+    </div>
+    <div style={{ fontWeight: 700, fontSize: 13, color: theme.text, marginBottom: 4 }}>{temuan.judul}</div>
+
+    <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+      {temuan.foto_inspeksi_p1?.[0] && (
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 10, color: theme.danger, marginBottom: 4, fontWeight: 700 }}>TEMUAN</div>
+          <img
+            src={temuan.foto_inspeksi_p1[0].url} alt="temuan" onClick={() => onPreview?.(temuan.foto_inspeksi_p1[0].url)}
+            style={{ width: "100%", height: 90, objectFit: "cover", borderRadius: 8, cursor: "pointer" }}
+          />
+        </div>
+      )}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 10, color: theme.success, marginBottom: 4, fontWeight: 700 }}>TINDAK LANJUT</div>
+        <img
+          src={tl.foto?.url} alt="tindak lanjut" onClick={() => onPreview?.(tl.foto?.url)}
+          style={{ width: "100%", height: 90, objectFit: "cover", borderRadius: 8, cursor: "pointer" }}
+        />
+      </div>
+    </div>
+
+    <div style={{ fontSize: 12, color: theme.textSub, background: theme.surfaceAlt, padding: "8px 10px", borderRadius: 8, marginTop: 8 }}>
+      {tl.catatan}
+    </div>
+  </div>
+);
+
 // ── P1TindakLanjut ────────────────────────────────────────────────────────────
 const P1TindakLanjut = ({ onBack, onNav }) => {
   const [inspeksiList, setInspeksiList] = useState([]);
   const [loading,      setLoading]      = useState(true);
   const [selected,     setSelected]     = useState(null);
+  const [step,         setStep]         = useState("form"); // "form" | "ringkasan" — hanya relevan saat `selected` terisi
   const [temuanList,   setTemuanList]   = useState([]);
   const [tl,           setTL]           = useState({});
   const [saving,       setSaving]       = useState(false);
@@ -394,6 +436,7 @@ const P1TindakLanjut = ({ onBack, onNav }) => {
     draftCreatedAtRef.current = restoredTl ? (restoredCreatedAt || Date.now()) : null;
     setRestoreCandidate(null);
     setSelected(insp);
+    setStep("form");
     const list = insp.inspeksi_p1_temuan || [];
     setTemuanList(list);
     const init = {};
@@ -408,15 +451,10 @@ const P1TindakLanjut = ({ onBack, onNav }) => {
   const updateTL = (temuanId, key, val) =>
     setTL(prev => ({ ...prev, [temuanId]: { ...prev[temuanId], [key]: val } }));
 
-  // Simpan — sebelumnya SETIAP insert/update di loop ini tidak dicek error-nya
-  // sama sekali, jadi kalau salah satu gagal (mis. koneksi putus), kode tetap
-  // lanjut menganggap sukses tanpa memberi tahu user. Sekarang tiap langkah
-  // dicek, dan kalau ada yang gagal di tengah batch, semua perubahan yang
-  // SUDAH sempat terjadi pada batch ini (insert tindaklanjut_p1, update status
-  // temuan, update status inspeksi) dibatalkan lagi — supaya retry tidak
-  // menghasilkan data dobel atau status yang nyangkut salah.
-  const handleSave = async () => {
-    // Validasi — tindakan DAN foto wajib untuk setiap temuan
+  // Validasi tindakan + foto untuk setiap temuan, lalu masuk ke layar
+  // Ringkasan — belum benar-benar kirim di sini (sama pola dengan
+  // handleTinjau di HSEFormScreen / TindakLanjutDetail HSE).
+  const handleTinjau = () => {
     let valid = true;
     const updated = { ...tl };
     Object.entries(tl).forEach(([id, t]) => {
@@ -425,7 +463,18 @@ const P1TindakLanjut = ({ onBack, onNav }) => {
       if (eC || eF) { updated[id] = { ...t, errorCatatan: eC, errorFoto: eF }; valid = false; }
     });
     if (!valid) { setTL(updated); alert("Lengkapi tindakan dan foto dokumentasi untuk setiap temuan!"); return; }
+    setStep("ringkasan");
+  };
 
+  // Simpan sesungguhnya — dipanggil dari layar Ringkasan. Sebelumnya SETIAP
+  // insert/update di loop ini tidak dicek error-nya sama sekali, jadi kalau
+  // salah satu gagal (mis. koneksi putus), kode tetap lanjut menganggap
+  // sukses tanpa memberi tahu user. Sekarang tiap langkah dicek, dan kalau
+  // ada yang gagal di tengah batch, semua perubahan yang SUDAH sempat
+  // terjadi pada batch ini (insert tindaklanjut_p1, update status temuan,
+  // update status inspeksi) dibatalkan lagi — supaya retry tidak
+  // menghasilkan data dobel atau status yang nyangkut salah.
+  const handleSave = async () => {
     setSaving(true);
 
     const insertedTLIds = [];       // id baris tindaklanjut_p1 yang sempat ke-insert
@@ -514,6 +563,56 @@ const P1TindakLanjut = ({ onBack, onNav }) => {
   );
 
   // ── Detail tindak lanjut ──────────────────────────────────────────────────
+  if (selected && step === "ringkasan") {
+    const semuaSelesai = Object.values(tl).every((t) => t.selesai);
+    return (
+      <div style={{ minHeight: "100vh", background: theme.bg, display: "flex", flexDirection: "column" }}>
+        <div style={{ background: theme.surface, padding: "48px 16px 16px", borderBottom: `1px solid ${theme.border}`, boxShadow: theme.shadow }}>
+          <div onClick={() => setStep("form")} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, cursor: "pointer", color: theme.textSub, fontSize: 13 }}>
+            <Icon name="arrow" size={16} color={theme.textSub} /> Kembali & Edit
+          </div>
+          <div style={{ fontWeight: 800, fontSize: 18, color: theme.text }}>Ringkasan Sebelum Kirim</div>
+          <div style={{ fontSize: 13, color: theme.textMuted, marginTop: 2 }}>
+            {selected.nomor_polisi} · {selected.transportir}
+          </div>
+        </div>
+
+        <div style={{ flex: 1, overflowY: "auto", padding: "20px 16px", paddingBottom: 100 }}>
+          <div style={{
+            marginBottom: 16, padding: "14px 16px", borderRadius: 14, textAlign: "center",
+            background: semuaSelesai ? "#D1FAE5" : "#FEF3C7",
+            color: semuaSelesai ? theme.success : "#92400E",
+            fontWeight: 800, fontSize: 15,
+          }}>
+            {semuaSelesai
+              ? `✅ SEMUA TEMUAN DITANDAI SELESAI (${temuanList.length}/${temuanList.length})`
+              : `🔧 SEBAGIAN TEMUAN MASIH DIKERJAKAN`}
+          </div>
+
+          <SectionLabel>Detail Tindak Lanjut</SectionLabel>
+          {temuanList.map((t, i) => (
+            <RingkasanItem key={t.id} idx={i} temuan={t} tl={tl[t.id] || {}} onPreview={setPreviewUrl} />
+          ))}
+
+          <div style={{ fontSize: 12, color: theme.textMuted, textAlign: "center", marginTop: 4 }}>
+            Pastikan semua data sudah benar. Data tidak dapat diedit setelah dikirim.
+          </div>
+        </div>
+
+        <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 430, padding: "12px 16px", background: theme.surface, borderTop: `1px solid ${theme.border}`, display: "flex", gap: 10 }}>
+          <Btn onClick={() => setStep("form")} variant="ghost" style={{ flex: 1 }} disabled={saving}>
+            ← Edit
+          </Btn>
+          <Btn onClick={handleSave} variant="primary" icon="check" style={{ flex: 2 }} disabled={saving}>
+            {saving ? "Mengirim..." : "✅ Kirim Sekarang"}
+          </Btn>
+        </div>
+
+        <PhotoLightbox url={previewUrl} onClose={() => setPreviewUrl(null)} />
+      </div>
+    );
+  }
+
   if (selected) {
     return (
       <div style={{ minHeight: "100vh", background: theme.bg, display: "flex", flexDirection: "column" }}>
@@ -544,8 +643,8 @@ const P1TindakLanjut = ({ onBack, onNav }) => {
         </div>
 
         <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 430, padding: "12px 16px", background: theme.surface, borderTop: `1px solid ${theme.border}` }}>
-          <Btn onClick={handleSave} variant="primary" icon="check" disabled={saving}>
-            {saving ? "Menyimpan..." : "Simpan Tindak Lanjut"}
+          <Btn onClick={handleTinjau} variant="primary" icon="check" disabled={saving}>
+            Tinjau & Kirim →
           </Btn>
         </div>
 
