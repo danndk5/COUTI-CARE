@@ -1,7 +1,7 @@
 import jsPDF from "jspdf";
 import JSZip from "jszip";
 import { formatDate, formatTime } from "./dateHelper";
-import { isGpsAbnormal, isHseBermasalah, isP1Bermasalah } from "./exportHelper";
+import { isGpsAbnormal, isHseBermasalah, isP1Bermasalah, formatPeriodeForFilename } from "./exportHelper";
 
 const KATEGORI_TITLE = {
   gps: "GPS & CCTV",
@@ -10,7 +10,7 @@ const KATEGORI_TITLE = {
 };
 
 // Convert URL foto (Supabase Storage, public) jadi base64 supaya bisa ditempel ke PDF.
-const urlToBase64 = async (url) => {
+const urlToBase64Once = async (url) => {
   try {
     const res = await fetch(url);
     const blob = await res.blob();
@@ -24,6 +24,9 @@ const urlToBase64 = async (url) => {
     return null;
   }
 };
+
+// Retry sekali kalau gagal — kadang cuma hiccup jaringan sesaat, bukan foto benar-benar hilang.
+const urlToBase64 = async (url) => (await urlToBase64Once(url)) ?? (await urlToBase64Once(url));
 
 // Ambil dimensi asli foto (supaya bisa ditempatkan tanpa distorsi/gepeng)
 const getImageDims = (base64) => new Promise((resolve) => {
@@ -160,6 +163,9 @@ const drawFotoPages = async (doc, { kat, item, fotoList }, pageWidth, pageHeight
     doc.addPage();
     const tableTop = drawKopSurat(doc, pageWidth, margin, `DOKUMENTASI FOTO — ${item.nomor_polisi || "-"}`) + 4;
     const batch = fotoList.slice(idx, idx + ROWS_PER_PAGE);
+    // Fetch semua foto dalam batch ini SEKALIGUS (paralel), bukan satu-satu berurutan —
+    // percepat proses signifikan, terutama untuk laporan dengan banyak foto (6 bulan dst).
+    const base64Batch = await Promise.all(batch.map((f) => urlToBase64(f.url)));
 
     const tableLeft  = margin;
     const tableRight = pageWidth - margin;
@@ -184,7 +190,7 @@ const drawFotoPages = async (doc, { kat, item, fotoList }, pageWidth, pageHeight
       const boxW = photoColW - cellPad * 2;
       const boxH = rowHeight - cellPad * 2;
 
-      const base64 = await urlToBase64(f.url);
+      const base64 = base64Batch[r];
       if (base64) {
         const dims = await getImageDims(base64);
         let dW = boxW, dH = boxH;
@@ -236,7 +242,7 @@ const buildSingleItemPdf = async ({ kat, item, sertakanFoto }) => {
 };
 
 // ── Generate 1 PDF per laporan, dibungkus jadi 1 file .zip untuk didownload ─────
-export const generatePdfPerItem = async ({ data, kategori, sertakanFoto, onProgress }) => {
+export const generatePdfPerItem = async ({ data, kategori, sertakanFoto, periodeRange, onProgress }) => {
   const zip = new JSZip();
   const totalItems = kategori.reduce((sum, k) => sum + (data[k]?.length || 0), 0);
   let processed = 0;
@@ -262,8 +268,9 @@ export const generatePdfPerItem = async ({ data, kategori, sertakanFoto, onProgr
   const zipBlob = await zip.generateAsync({ type: "blob" });
   const url = URL.createObjectURL(zipBlob);
   const a = document.createElement("a");
+  const periodeSlug = periodeRange ? formatPeriodeForFilename(periodeRange.fromISO, periodeRange.toISO) : new Date().toISOString().slice(0, 10);
   a.href = url;
-  a.download = `Laporan-Inspeksi-${new Date().toISOString().slice(0, 10)}.zip`;
+  a.download = `Laporan-Inspeksi_${periodeSlug}.zip`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

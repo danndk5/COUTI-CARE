@@ -1,6 +1,33 @@
 import { supabase } from "./supabase";
 
-// ── Rentang tanggal dari pilihan periode di ExportScreen ────────────────────────
+// ── Format tanggal untuk nama file (aman dari karakter spesial) ────────────────
+const MONTHS_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+export const formatDateForFilename = (iso) => {
+  const d = new Date(iso);
+  return `${String(d.getDate()).padStart(2, "0")}-${MONTHS_EN[d.getMonth()]}-${d.getFullYear()}`;
+};
+export const formatPeriodeForFilename = (fromISO, toISO) =>
+  `${formatDateForFilename(fromISO)}_sd_${formatDateForFilename(toISO)}`;
+
+// ── Audit log — catat setiap export ke tabel export_log (lihat migrasi SQL terpisah) ──
+// Sengaja tidak melempar error kalau gagal — logging tidak boleh menggagalkan proses export utama.
+export const logExportActivity = async ({ kategori, periode, fromISO, toISO, format, sertakanFoto, totalRows }) => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    await supabase.from("export_log").insert([{
+      user_id: user?.id || null,
+      kategori: kategori.join(","),
+      periode,
+      periode_from: fromISO,
+      periode_to: toISO,
+      format,
+      sertakan_foto: sertakanFoto,
+      total_rows: totalRows,
+    }]);
+  } catch (err) {
+    console.error("Gagal mencatat log export (tidak menghentikan proses export):", err);
+  }
+};
 export const getDateRangeFromPeriode = (periode, customFrom, customTo) => {
   const now = new Date();
   let from;
