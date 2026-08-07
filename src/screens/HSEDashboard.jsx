@@ -230,46 +230,6 @@ const SearchBar = ({ theme, value, onChange }) => (
   </div>
 );
 
-// ── TrendChart — grafik batang Lulus vs Tidak Lulus per bulan ─────────────────
-const TrendChart = ({ theme, data }) => {
-  if (data.length === 0) return null;
-  const maxVal = Math.max(1, ...data.map((d) => Math.max(d.lulus, d.tidakLulus)));
-
-  return (
-    <div style={{ marginBottom: 28, padding: 16, borderRadius: 14, background: theme.surface, border: `1px solid ${theme.border}` }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-        <div style={{ fontWeight: 700, fontSize: 13, color: theme.text }}>📊 Tren Lulus vs Tidak Lulus</div>
-        <div style={{ display: "flex", gap: 12, fontSize: 11, fontWeight: 600 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-            <div style={{ width: 9, height: 9, borderRadius: 2, background: theme.success, flexShrink: 0 }} />
-            <span style={{ color: theme.text }}>Lulus</span>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-            <div style={{ width: 9, height: 9, borderRadius: 2, background: theme.danger, flexShrink: 0 }} />
-            <span style={{ color: theme.text }}>Tidak Lulus</span>
-          </div>
-        </div>
-      </div>
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 10, height: 100 }}>
-        {data.map((d) => (
-          <div key={d.label} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", height: "100%", justifyContent: "flex-end" }}>
-            <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: "100%" }}>
-              <div style={{
-                width: 10, borderRadius: "3px 3px 0 0", background: theme.success,
-                height: `${(d.lulus / maxVal) * 100}%`, minHeight: d.lulus > 0 ? 3 : 0,
-              }} title={`Lulus: ${d.lulus}`} />
-              <div style={{
-                width: 10, borderRadius: "3px 3px 0 0", background: theme.danger,
-                height: `${(d.tidakLulus / maxVal) * 100}%`, minHeight: d.tidakLulus > 0 ? 3 : 0,
-              }} title={`Tidak Lulus: ${d.tidakLulus}`} />
-            </div>
-            <div style={{ fontSize: 10, fontWeight: 600, color: theme.textMuted, marginTop: 6, textAlign: "center" }}>{d.label}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-};
 
 // ── StatCard ─────────────────────────────────────────────────────────────────
 const StatCard = ({ value, label, bg, color, onClick }) => (
@@ -444,20 +404,6 @@ const HSEDashboard = ({ role, onNav, onLogout }) => {
     return result;
   }, [inspeksiAll, filterMode, customStart, customEnd, searchQuery]);
 
-  // Data grafik tren — kelompokkan per bulan (maks 6 bulan terakhir yang ada datanya)
-  const trendData = useMemo(() => {
-    const map = {};
-    inspeksiFiltered.forEach((i) => {
-      const d = new Date(i.created_at);
-      const key = `${d.getFullYear()}-${d.getMonth()}`;
-      if (!map[key]) {
-        map[key] = { label: d.toLocaleDateString("id-ID", { month: "short" }), lulus: 0, tidakLulus: 0, sortKey: d.getFullYear() * 12 + d.getMonth() };
-      }
-      if (i.status === "lulus" || i.status === "selesai") map[key].lulus += 1;
-      if (i.status === "tidak_lulus") map[key].tidakLulus += 1;
-    });
-    return Object.values(map).sort((a, b) => a.sortKey - b.sortKey).slice(-6);
-  }, [inspeksiFiltered]);
 
   // Status yang tersimpan: "lulus" | "tidak_lulus" | "selesai"
   const perluTindak = inspeksiFiltered.filter((i) => i.status === "tidak_lulus");
@@ -515,8 +461,6 @@ const HSEDashboard = ({ role, onNav, onLogout }) => {
           setCustomEnd={setCustomEnd}
         />
 
-        {/* Grafik tren */}
-        <TrendChart theme={theme} data={trendData} />
 
         <SectionLabel>Ringkasan Uji Kedap</SectionLabel>
         <div style={{ display: "flex", gap: 10, marginBottom: 28 }}>
