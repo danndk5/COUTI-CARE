@@ -34,12 +34,14 @@ export const isHSE     = (role) => role === "hse";
 export const isP1      = (role) => role === "p1";
 
 const NAV_ITEMS = {
-  // Beranda | Pengecekan | Tindak Lanjut | Riwayat
+  // Beranda | Pengecekan | Tindak Lanjut
+  // (Riwayat sengaja dihapus untuk Teknisi — datanya sudah tercakup di
+  // kartu Beranda: Total Diperiksa, Perlu Ditindaklanjuti, Sudah Ditindaklanjuti,
+  // sama seperti alasan yang sama dipakai di HSE)
   teknisi: [
     { id: "dashboard",      label: "Beranda",        icon: "home"    },
     { id: "form",           label: "Pengecekan",     icon: "plus",  center: true },
     { id: "tindak-lanjut",  label: "Tindak Lanjut",  icon: "wrench" },
-    { id: "history",        label: "Riwayat",        icon: "history" },
   ],
   // Beranda | Riwayat | Maintenance
   depot: [
@@ -55,12 +57,13 @@ const NAV_ITEMS = {
     { id: "form",           label: "Pengecekan",     icon: "plus",  center: true },
     { id: "tindak-lanjut",  label: "Tindak Lanjut",  icon: "wrench" },
   ],
-  // Beranda | Pengecekan | Tindak Lanjut | Riwayat
+  // Beranda | Pengecekan | Tindak Lanjut
+  // (Riwayat sengaja dihapus untuk P1 — datanya sudah tercakup di kartu
+  // Beranda, sama seperti alasan yang sama dipakai di HSE/Teknisi)
   p1: [
     { id: "dashboard",      label: "Beranda",        icon: "home"    },
     { id: "form",           label: "Pengecekan",     icon: "plus",  center: true },
     { id: "tindak-lanjut",  label: "Tindak Lanjut",  icon: "wrench" },
-    { id: "history",        label: "Riwayat",        icon: "history" },
   ],
 };
 
